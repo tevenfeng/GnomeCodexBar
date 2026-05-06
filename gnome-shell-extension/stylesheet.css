@@ -1,0 +1,187 @@
+/* codex-bar GNOME Shell Extension Styles */
+
+.codex-bar-popup {
+    padding: 0;
+    spacing: 0;
+    background-color: #2a2a2a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.codex-bar-container {
+    padding: 14px 18px;
+    min-width: 340px;
+}
+
+.codex-bar-title {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    color: #eeeeee;
+}
+
+/* Provider section */
+.codex-bar-provider {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.codex-bar-provider.selected {
+    background-color: rgba(53, 132, 228, 0.12);
+    border-color: rgba(53, 132, 228, 0.25);
+}
+
+.codex-bar-provider-header-btn {
+    padding: 0;
+    border: none;
+    background: none;
+}
+
+.codex-bar-provider-header-btn:hover {
+    background: none;
+}
+
+.codex-bar-provider-header {
+    spacing: 8px;
+    margin-bottom: 6px;
+}
+
+.codex-bar-provider-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #cccccc;
+}
+
+.codex-bar-provider-name.selected {
+    color: #3584e4;
+}
+
+.codex-bar-radio {
+    width: 16px;
+    font-size: 16px;
+}
+
+.codex-bar-radio.active {
+    color: #3584e4;
+}
+
+/* Provider details */
+.codex-bar-detail {
+    font-size: 11px;
+    color: #999999;
+    margin: 2px 0;
+    padding-left: 24px;
+}
+
+.codex-bar-detail-label {
+    color: #888888;
+}
+
+.codex-bar-detail-value {
+    color: #bbbbbb;
+    font-family: monospace;
+}
+
+.codex-bar-detail-highlight {
+    color: #3584e4;
+    font-weight: bold;
+}
+
+/* Percentage bar */
+.codex-bar-bar-bg {
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    margin: 8px 0 4px 0;
+}
+
+.codex-bar-bar-fill {
+    height: 6px;
+    border-radius: 3px;
+}
+
+.codex-bar-bar-fill.high {
+    background-color: #33cc66;
+}
+
+.codex-bar-bar-fill.medium {
+    background-color: #e6a817;
+}
+
+.codex-bar-bar-fill.low {
+    background-color: #cc3333;
+}
+
+.codex-bar-percent {
+    font-size: 11px;
+    font-weight: bold;
+    text-align: right;
+}
+
+.codex-bar-percent.high {
+    color: #33cc66;
+}
+
+.codex-bar-percent.medium {
+    color: #e6a817;
+}
+
+.codex-bar-percent.low {
+    color: #cc3333;
+}
+
+/* Error text */
+.codex-bar-error {
+    font-size: 11px;
+    color: #cc3333;
+    padding-left: 24px;
+    margin-top: 4px;
+}
+
+/* Footer */
+.codex-bar-footer {
+    padding: 10px 0 0 0;
+    spacing: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 6px;
+}
+
+.codex-bar-update-time {
+    font-size: 10px;
+    color: #666666;
+}
+
+.codex-bar-button {
+    padding: 6px 12px;
+    border-radius: 6px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #bbbbbb;
+    font-size: 12px;
+}
+
+.codex-bar-button:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+}
+
+/* Panel button */
+.codex-bar-panel-label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.codex-bar-panel-label.high {
+    color: #33cc66;
+}
+
+.codex-bar-panel-label.medium {
+    color: #e6a817;
+}
+
+.codex-bar-panel-label.low {
+    color: #cc3333;
+}

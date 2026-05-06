@@ -1,0 +1,9 @@
+# Rust
+cli/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

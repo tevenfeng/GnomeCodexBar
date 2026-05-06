@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.codex-bar" path="/org/gnome/shell/extensions/codex-bar/">
+    <key name="refresh-interval" type="i">
+      <default>300</default>
+      <summary>Refresh interval in seconds</summary>
+      <description>How often to check for updated status from the CLI daemon.</description>
+    </key>
+    <key name="cli-path" type="s">
+      <default>"/usr/local/bin/codex-bar-cli"</default>
+      <summary>Path to the codex-bar-cli binary</summary>
+      <description>Full path to the CLI tool used for fetching usage data.</description>
+    </key>
+  </schema>
+</schemalist>
