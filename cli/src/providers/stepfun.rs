@@ -12,6 +12,8 @@ const APP_ID: &str = "10300";
 const PLATFORM_URL: &str = "https://platform.stepfun.com";
 const API_URL: &str =
     "https://platform.stepfun.com/api/step.openapi.devcenter.Dashboard/QueryStepPlanRateLimit";
+const PLAN_STATUS_URL: &str =
+    "https://platform.stepfun.com/api/step.openapi.devcenter.Dashboard/GetStepPlanStatus";
 const REGISTER_URL: &str =
     "https://platform.stepfun.com/passport/proto.api.passport.v1.PassportService/RegisterDevice";
 const LOGIN_URL: &str =
@@ -106,6 +108,25 @@ struct LoginResponse {
     access_token: Option<TokenPair>,
     #[serde(rename = "refreshToken")]
     refresh_token: Option<TokenPair>,
+}
+
+// ── Plan status response types ───────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct PlanStatusSubscription {
+    name: Option<String>,
+    #[allow(dead_code)]
+    #[serde(rename = "plan_type")]
+    plan_type: Option<i64>,
+    #[allow(dead_code)]
+    #[serde(rename = "status")]
+    plan_status: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlanStatusResponse {
+    status: Option<i32>,
+    subscription: Option<PlanStatusSubscription>,
 }
 
 // ── Rate limit response types ───────────────────────────
@@ -287,6 +308,57 @@ async fn full_login(
     Ok(token)
 }
 
+/// Query plan status (subscription name) with Oasis-Token.
+async fn query_plan_status(
+    client: &reqwest::Client,
+    token: &str,
+) -> Option<String> {
+    let cookie = format!("Oasis-Token={}; Oasis-Webid={}", token, WEB_ID);
+
+    let resp = client
+        .post(PLAN_STATUS_URL)
+        .headers(base_headers())
+        .header("Cookie", &cookie)
+        .body("{}")
+        .send()
+        .await;
+
+    match resp {
+        Ok(resp) => {
+            let body_text = match resp.text().await {
+                Ok(t) => t,
+                Err(e) => {
+                    log::debug!("Plan status response read failed: {}", e);
+                    return None;
+                }
+            };
+            log::debug!("Plan status response: {}", body_text);
+
+            let plan: PlanStatusResponse = match serde_json::from_str(&body_text) {
+                Ok(p) => p,
+                Err(e) => {
+                    log::debug!("Plan status parse failed: {}. Body: {}", e, body_text);
+                    return None;
+                }
+            };
+
+            if plan.status != Some(1) {
+                log::debug!("Plan status API returned non-success status: {:?}", plan.status);
+                return None;
+            }
+
+            plan.subscription
+                .and_then(|s| s.name)
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+        }
+        Err(e) => {
+            log::debug!("Plan status request failed: {}", e);
+            None
+        }
+    }
+}
+
 /// Query rate limits with Oasis-Token (no INGRESSCOOKIE needed).
 async fn query_usage(
     client: &reqwest::Client,
@@ -342,6 +414,9 @@ impl Provider for StepFunProvider {
         // Step 4: query usage
         let data = query_usage(&client, &token).await?;
 
+        // Step 5: query plan status (graceful degradation on failure)
+        let plan_name = query_plan_status(&client, &token).await;
+
         // Check for auth errors
         if data.status != Some(1) {
             let msg = data.message.unwrap_or_else(|| "Unknown error".into());
@@ -361,7 +436,9 @@ impl Provider for StepFunProvider {
                         error: Some(data.message.unwrap_or_else(|| "Unknown error".into())),
                     });
                 }
-                return build_status(&data);
+                // Retry plan status on re-login
+                let plan_name = query_plan_status(&client, &token).await;
+                return build_status(&data, plan_name.as_deref());
             }
             return Ok(ProviderStatus {
                 provider_id: "stepfun".into(),
@@ -373,11 +450,11 @@ impl Provider for StepFunProvider {
             });
         }
 
-        build_status(&data)
+        build_status(&data, plan_name.as_deref())
     }
 }
 
-fn build_status(data: &RateLimitResponse) -> Result<ProviderStatus, anyhow::Error> {
+fn build_status(data: &RateLimitResponse, plan_name: Option<&str>) -> Result<ProviderStatus, anyhow::Error> {
     let five_hour_left = data
         .five_hour_usage_left_rate
         .as_ref()
@@ -413,6 +490,9 @@ fn build_status(data: &RateLimitResponse) -> Result<ProviderStatus, anyhow::Erro
         Value::String(five_hour_reset),
     );
     details.insert("weekly_usage_reset_time".into(), Value::String(weekly_reset));
+    if let Some(name) = plan_name {
+        details.insert("plan_name".into(), Value::String(name.to_string()));
+    }
 
     Ok(ProviderStatus {
         provider_id: "stepfun".into(),
