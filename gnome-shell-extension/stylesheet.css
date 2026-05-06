@@ -1,5 +1,7 @@
 /* codex-bar GNOME Shell Extension Styles */
 
+/* ===== Dark theme (default) ===== */
+
 .codex-bar-popup {
     padding: 0;
     spacing: 0;
@@ -94,6 +96,7 @@
 /* Percentage bar */
 .codex-bar-bar-bg {
     height: 6px;
+    padding: 0;
     background-color: rgba(255, 255, 255, 0.12);
     border-radius: 3px;
     margin: 8px 0 4px 0;
@@ -101,6 +104,8 @@
 
 .codex-bar-bar-fill {
     height: 6px;
+    padding: 0;
+    margin: 0;
     border-radius: 3px;
 }
 
@@ -184,4 +189,54 @@
 
 .codex-bar-panel-label.low {
     color: #cc3333;
+}
+
+/* ===== Light theme overrides ===== */
+
+.codex-bar-popup.codex-bar-light {
+    background-color: #fafafa;
+    border-color: rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-title {
+    color: #1a1a1a;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-bar-bg {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-bar-fill.high {
+    background-color: #2ea043;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-bar-fill.medium {
+    background-color: #c48a00;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-bar-fill.low {
+    background-color: #cc3333;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-percent.high {
+    color: #2ea043;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-percent.medium {
+    color: #c48a00;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-percent.low {
+    color: #cc3333;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-button {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #333333;
+}
+
+.codex-bar-popup.codex-bar-light .codex-bar-button:hover {
+    background-color: rgba(0, 0, 0, 0.12);
+    color: #000000;
 }
