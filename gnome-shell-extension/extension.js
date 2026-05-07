@@ -267,22 +267,29 @@ export default class CodexBarExtension extends Extension {
                 sec.add_child(row);
             }
         } else {
-            const dn=d.plan_name||'Unknown', fh=d.five_hour_usage_left_rate!=null?Math.round(d.five_hour_usage_left_rate*100):'--', wk=d.weekly_usage_left_rate!=null?Math.round(d.weekly_usage_left_rate*100):'--';
+            const dn=d.plan_name||'Unknown';
             sec.add_child(new St.Label({ text:`Plan: ${dn}`, style:`font-size:11px; color:${c.accent}; font-weight:bold; padding:2px 0 2px 24px;` }));
-            sec.add_child(new St.Label({ text:`5h: ${fh}% (reset ${this._r(d.five_hour_usage_reset_time)})`, style:`font-size:11px; color:${c.muted}; padding:1px 0 1px 24px;` }));
-            sec.add_child(new St.Label({ text:`Week: ${wk}% (reset ${this._r(d.weekly_usage_reset_time)})`, style:`font-size:11px; color:${c.muted}; padding:1px 0 1px 24px;` }));
-            const v=Math.round(pr.remaining_percent||0), w2=220, f=Math.max(0,Math.round(v/100*w2));
-            let cl='high'; if(v<20)cl='low'; else if(v<50)cl='medium';
-            const bar=new St.BoxLayout({ vertical:true, style:'padding:6px 0 4px 24px;' });
-            // Two-segment bar: fill + rest, in a clipped rounded container
-            const segs=new St.BoxLayout({ style:`width:${w2}px; height:6px; spacing:0;` });
-            segs.add_child(new St.Widget({ style_class:`codex-bar-bar-fill ${cl}`, style:`width:${f}px; height:6px;` }));
-            segs.add_child(new St.Widget({ style_class:'codex-bar-bar-bg', style:`width:${w2-f}px; height:6px;` }));
-            const clip=new St.Widget({ style:`width:${w2}px; height:6px; border-radius:3px; overflow:hidden;` });
-            clip.add_child(segs);
-            bar.add_child(clip); bar.add_child(new St.Label({ text:`${v}%`, x_expand:true, style_class:`codex-bar-percent ${cl}` }));
-            sec.add_child(bar);
+            if (d.five_hour_usage_left_rate!=null) sec.add_child(this._barP(d.five_hour_usage_left_rate, '5h', d.five_hour_usage_reset_time));
+            if (d.weekly_usage_left_rate!=null) sec.add_child(this._barP(d.weekly_usage_left_rate, 'Week', d.weekly_usage_reset_time));
         }
+    }
+
+    _barP(rate, label, resetTime) {
+        const c = this._c(), pct = Math.round(rate * 100), w2 = 140, f = Math.max(0, Math.round(rate * w2));
+        let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
+        const row = new St.BoxLayout({ style: 'padding:3px 0 3px 24px;' });
+        row.add_child(new St.Label({ text: `${label}:`, style: `font-size:10px; color:${c.dim}; margin-right:8px; min-width:36px;` }));
+        const body = new St.BoxLayout({ vertical: true });
+        const segs = new St.BoxLayout({ style: `width:${w2}px; height:6px; spacing:0;` });
+        segs.add_child(new St.Widget({ style: `width:${f}px; height:6px; border-radius:3px 0 0 3px;`, style_class: `codex-bar-bar-fill ${cl}` }));
+        segs.add_child(new St.Widget({ style: `width:${w2 - f}px; height:6px; border-radius:0 3px 3px 0; background-color:${c.bgBar};` }));
+        body.add_child(segs);
+        const info = new St.BoxLayout({});
+        info.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}`, x_expand: true }));
+        info.add_child(new St.Label({ text: `reset ${this._r(resetTime)}`, style: `font-size:9px; color:${c.faint};` }));
+        body.add_child(info);
+        row.add_child(body);
+        return row;
     }
 
     _addFt(r) {
