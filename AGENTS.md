@@ -155,7 +155,10 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 cd cli && cargo build --release
 
 # 安装（编译 + 部署扩展 + schema）
-./install.sh
+# Linux:
+./install-linux.sh
+# macOS:
+# ./install-macos.sh
 
 # 单次拉取测试
 codex-bar-cli fetch

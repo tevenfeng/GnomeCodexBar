@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# GNOME Codex Bar - Installation Script
-# Installs both the Rust CLI and the GNOME Shell Extension
+# GNOME Codex Bar - Linux (ZorinOS) Installation Script
+# Installs the Rust CLI and the GNOME Shell Extension
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
@@ -14,7 +14,7 @@ EXT_INSTALL_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
 SCHEMA_DIR="$HOME/.local/share/glib-2.0/schemas"
 BIN_DIR="$HOME/.local/bin"
 
-echo "=== GNOME Codex Bar Installer ==="
+echo "=== GNOME Codex Bar Installer (Linux) ==="
 echo ""
 
 # Step 1: Build and install CLI
@@ -77,6 +77,7 @@ echo "  4. Enable extension:    gnome-extensions enable codex-bar@gnome"
 echo "     (or use GNOME Extensions app)"
 echo "  5. Restart GNOME Shell: Alt+F2, type 'r', press Enter (X11)"
 echo "     or logout/login (Wayland)"
+echo "  6. Enable auto-start:   codex-bar-cli autostart enable"
 echo ""
 echo "To test immediately:      codex-bar-cli fetch"
 echo "To check status:          codex-bar-cli status"

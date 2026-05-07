@@ -39,8 +39,10 @@ GNOME Shell 顶栏扩展 + Rust CLI 后端，用于实时监控 DeepSeek 和 Ste
 
 ### 一键安装
 
+**Linux (ZorinOS)：**
+
 ```bash
-./install.sh
+./install-linux.sh
 ```
 
 安装脚本会：
@@ -48,6 +50,18 @@ GNOME Shell 顶栏扩展 + Rust CLI 后端，用于实时监控 DeepSeek 和 Ste
 2. 将 GNOME Shell 扩展安装到 `~/.local/share/gnome-shell/extensions/`
 3. 编译并安装 GSettings schema
 4. 验证安装结果
+
+**macOS：**
+
+```bash
+./install-macos.sh
+```
+
+安装脚本会：
+1. 编译 Rust CLI 并安装到 `/usr/local/bin/`
+2. 验证安装结果
+
+> macOS 不支持 GNOME Shell Extension，仅安装 CLI 守护进程。
 
 ### 手动安装
 
@@ -251,7 +265,8 @@ GnomeCodexBar/
 │   ├── prefs.js                  # 偏好设置
 │   ├── metadata.json             # 扩展元数据
 │   └── schemas/                  # GSettings schema
-├── install.sh                    # 一键安装脚本
+├── install-linux.sh               # Linux 一键安装脚本
+├── install-macos.sh               # macOS 一键安装脚本
 └── test.sh                       # 一键测试脚本
 ```
 
