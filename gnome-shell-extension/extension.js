@@ -277,17 +277,23 @@ export default class CodexBarExtension extends Extension {
     _barP(rate, label, resetTime) {
         const c = this._c(), pct = Math.round(rate * 100), w2 = 140, f = Math.max(0, Math.round(rate * w2));
         let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
-        const row = new St.BoxLayout({ style: 'padding:3px 0 3px 24px;' });
-        row.add_child(new St.Label({ text: `${label}:`, style: `font-size:10px; color:${c.dim}; margin-right:8px; min-width:36px;` }));
-        const segs = new St.BoxLayout({ style: `width:${w2}px; height:6px; spacing:0;` });
-        segs.add_child(new St.Widget({ style: `width:${f}px; height:6px; border-radius:3px 0 0 3px;`, style_class: `codex-bar-bar-fill ${cl}` }));
-        segs.add_child(new St.Widget({ style: `width:${w2 - f}px; height:6px; border-radius:0 3px 3px 0; background-color:${c.bgBar};` }));
-        const barWrap = new St.BoxLayout({ style: 'margin-right:8px;' });
-        barWrap.add_child(segs);
-        row.add_child(barWrap);
-        row.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}`, style: 'margin-right:8px;' }));
-        row.add_child(new St.Label({ text: `reset ${this._r(resetTime)}`, style: `font-size:9px; color:${c.faint};` }));
-        return row;
+        const box = new St.BoxLayout({ vertical: true, style: 'padding:3px 0 3px 24px;' });
+        // Row 1: label + progress bar + percentage
+        const row = new St.BoxLayout({ style: 'spacing:8px;' });
+        row.add_child(new St.Label({ text: `${label}:`, style: `font-size:10px; color:${c.dim}; min-width:36px;` }));
+        const bar = new St.Widget({ style_class: 'codex-bar-bar-bg', style: `width:${w2}px; height:6px;` });
+        bar.add_child(new St.Widget({ style: `width:${f}px; height:6px;`, style_class: `codex-bar-bar-fill ${cl}` }));
+        row.add_child(bar);
+        row.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}` }));
+        box.add_child(row);
+        // Row 2: reset time (right-aligned)
+        box.add_child(new St.Label({
+            text: `reset ${this._r(resetTime)}`,
+            x_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            style: `font-size:9px; color:${c.faint}; padding-right:4px;`
+        }));
+        return box;
     }
 
     _addFt(r) {
