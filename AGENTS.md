@@ -173,6 +173,29 @@ Rust 工具链路径（如通过 rustup 安装但 cargo 不在 PATH）：
 
 CLI 后端使用 Rust 内置 `#[cfg(test)]` 模块进行单元测试，`cargo-llvm-cov` 生成覆盖率报告。
 
+测试代码集中在 `cli/src/tests/` 目录下，通过 `#[path]` 属性从源文件引用：
+
+```
+cli/src/
+├── tests/                          # 所有测试文件集中存放
+│   ├── config.rs                   # config.rs 的测试
+│   ├── output.rs                   # output.rs 的测试
+│   ├── providers_mod.rs            # providers/mod.rs 的测试
+│   ├── providers_deepseek.rs       # providers/deepseek.rs 的测试
+│   └── providers_stepfun.rs        # providers/stepfun.rs 的测试
+├── config.rs                       # #[cfg(test)] #[path = "tests/config.rs"] mod tests;
+├── output.rs                       # #[cfg(test)] #[path = "tests/output.rs"] mod tests;
+└── providers/
+    ├── mod.rs                      # #[cfg(test)] #[path = "../tests/providers_mod.rs"] mod tests;
+    ├── deepseek.rs                 # #[cfg(test)] #[path = "../tests/providers_deepseek.rs"] mod tests;
+    └── stepfun.rs                  # #[cfg(test)] #[path = "../tests/providers_stepfun.rs"] mod tests;
+```
+
+这种方式的优点：
+- 测试代码集中管理，源文件保持简洁
+- 通过 `#[path]` 引用，测试仍可访问私有类型（`FlexibleNumber` 等）
+- 无需将私有类型改为 `pub`，不暴露内部 API
+
 ### 一键测试
 
 ```bash
@@ -204,13 +227,13 @@ cd cli && cargo llvm-cov --html --open
 ### 测试约定
 
 - **纯逻辑优先**：优先测试数据转换、序列化、解析等不依赖网络的函数
-- **同文件测试**：私有类型（`FlexibleNumber` 等）的测试必须放在同文件的 `#[cfg(test)] mod tests` 中
+- **集中测试目录**：测试代码集中在 `cli/src/tests/` 目录，源文件通过 `#[path]` 属性引用，测试仍可访问私有类型
 - **StepFun 灵活类型**：每次新增 StepFun API 解析逻辑，务必为对应的灵活类型反序列化器添加测试
 - **status.json 契约**：ProviderStatus 和 StatusSnapshot 的序列化测试确保后端-前端数据格式一致
 
 ## 已知问题
 
-~~详见 [FIX_PLAN.md](./FIX_PLAN.md)~~（已修复）
+暂无
 
 ## 注意事项
 

@@ -159,6 +159,28 @@ cd cli && cargo test
 cd cli && cargo llvm-cov --html --open
 ```
 
+### 测试架构
+
+测试代码集中在 `cli/src/tests/` 目录，源文件通过 `#[path]` 属性引用：
+
+```
+cli/src/
+├── tests/                          # 所有测试文件集中存放
+│   ├── config.rs                   # config.rs 的测试
+│   ├── output.rs                   # output.rs 的测试
+│   ├── providers_mod.rs            # providers/mod.rs 的测试
+│   ├── providers_deepseek.rs       # providers/deepseek.rs 的测试
+│   └── providers_stepfun.rs        # providers/stepfun.rs 的测试
+├── config.rs                       # #[cfg(test)] #[path = "tests/config.rs"] mod tests;
+├── output.rs                       # #[cfg(test)] #[path = "tests/output.rs"] mod tests;
+└── providers/
+    ├── mod.rs                      # #[cfg(test)] #[path = "../tests/providers_mod.rs"] mod tests;
+    ├── deepseek.rs                 # #[cfg(test)] #[path = "../tests/providers_deepseek.rs"] mod tests;
+    └── stepfun.rs                  # #[cfg(test)] #[path = "../tests/providers_stepfun.rs"] mod tests;
+```
+
+这种方式的优点：测试代码集中管理、源文件保持简洁、测试仍可访问私有类型（无需改为 `pub`）。
+
 ### 测试覆盖
 
 | 模块 | 测试数 | 覆盖内容 |
@@ -181,6 +203,12 @@ GnomeCodexBar/
 │       ├── daemon.rs             # 守护进程循环
 │       ├── config.rs             # 配置加载 (TOML)
 │       ├── output.rs             # 写入 status.json
+│       ├── tests/                # 单元测试（集中目录）
+│       │   ├── config.rs
+│       │   ├── output.rs
+│       │   ├── providers_mod.rs
+│       │   ├── providers_deepseek.rs
+│       │   └── providers_stepfun.rs
 │       └── providers/
 │           ├── mod.rs            # Provider trait & 共享类型
 │           ├── deepseek.rs       # DeepSeek 余额 API
