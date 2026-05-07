@@ -143,5 +143,5 @@ pub fn status_dir() -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "tests/config.rs"]
+#[path = "../tests/unit/config.rs"]
 mod tests;

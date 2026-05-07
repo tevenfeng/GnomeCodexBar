@@ -505,5 +505,5 @@ fn build_status(data: &RateLimitResponse, plan_name: Option<&str>) -> Result<Pro
 }
 
 #[cfg(test)]
-#[path = "../tests/providers_stepfun.rs"]
+#[path = "../../tests/unit/providers_stepfun.rs"]
 mod tests;

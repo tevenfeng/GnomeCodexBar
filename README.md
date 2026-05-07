@@ -161,22 +161,24 @@ cd cli && cargo llvm-cov --html --open
 
 ### 测试架构
 
-测试代码集中在 `cli/src/tests/` 目录，源文件通过 `#[path]` 属性引用：
+测试代码集中在 `cli/tests/unit/` 目录（与 `src/` 同级），源文件通过 `#[path]` 属性引用：
 
 ```
-cli/src/
-├── tests/                          # 所有测试文件集中存放
-│   ├── config.rs                   # config.rs 的测试
-│   ├── output.rs                   # output.rs 的测试
-│   ├── providers_mod.rs            # providers/mod.rs 的测试
-│   ├── providers_deepseek.rs       # providers/deepseek.rs 的测试
-│   └── providers_stepfun.rs        # providers/stepfun.rs 的测试
-├── config.rs                       # #[cfg(test)] #[path = "tests/config.rs"] mod tests;
-├── output.rs                       # #[cfg(test)] #[path = "tests/output.rs"] mod tests;
-└── providers/
-    ├── mod.rs                      # #[cfg(test)] #[path = "../tests/providers_mod.rs"] mod tests;
-    ├── deepseek.rs                 # #[cfg(test)] #[path = "../tests/providers_deepseek.rs"] mod tests;
-    └── stepfun.rs                  # #[cfg(test)] #[path = "../tests/providers_stepfun.rs"] mod tests;
+cli/
+├── src/                            # 源代码
+│   ├── config.rs                   # #[cfg(test)] #[path = "../tests/unit/config.rs"] mod tests;
+│   ├── output.rs                   # #[cfg(test)] #[path = "../tests/unit/output.rs"] mod tests;
+│   └── providers/
+│       ├── mod.rs                  # #[cfg(test)] #[path = "../../tests/unit/providers_mod.rs"] mod tests;
+│       ├── deepseek.rs             # #[cfg(test)] #[path = "../../tests/unit/providers_deepseek.rs"] mod tests;
+│       └── stepfun.rs              # #[cfg(test)] #[path = "../../tests/unit/providers_stepfun.rs"] mod tests;
+└── tests/
+    └── unit/                       # 所有测试文件（unit/ 子目录避免 Cargo 集成测试冲突）
+        ├── config.rs
+        ├── output.rs
+        ├── providers_mod.rs
+        ├── providers_deepseek.rs
+        └── providers_stepfun.rs
 ```
 
 这种方式的优点：测试代码集中管理、源文件保持简洁、测试仍可访问私有类型（无需改为 `pub`）。
@@ -198,21 +200,22 @@ cli/src/
 ```
 GnomeCodexBar/
 ├── cli/                          # Rust CLI 后端
-│   └── src/
-│       ├── main.rs               # CLI 入口 & 子命令
-│       ├── daemon.rs             # 守护进程循环
-│       ├── config.rs             # 配置加载 (TOML)
-│       ├── output.rs             # 写入 status.json
-│       ├── tests/                # 单元测试（集中目录）
-│       │   ├── config.rs
-│       │   ├── output.rs
-│       │   ├── providers_mod.rs
-│       │   ├── providers_deepseek.rs
-│       │   └── providers_stepfun.rs
-│       └── providers/
-│           ├── mod.rs            # Provider trait & 共享类型
-│           ├── deepseek.rs       # DeepSeek 余额 API
-│           └── stepfun.rs        # StepFun 登录 + 用量 + 套餐 API
+│   ├── src/
+│   │   ├── main.rs               # CLI 入口 & 子命令
+│   │   ├── daemon.rs             # 守护进程循环
+│   │   ├── config.rs             # 配置加载 (TOML)
+│   │   ├── output.rs             # 写入 status.json
+│   │   └── providers/
+│   │       ├── mod.rs            # Provider trait & 共享类型
+│   │       ├── deepseek.rs       # DeepSeek 余额 API
+│   │       └── stepfun.rs        # StepFun 登录 + 用量 + 套餐 API
+│   └── tests/
+│       └── unit/                 # 单元测试（与 src/ 同级）
+│           ├── config.rs
+│           ├── output.rs
+│           ├── providers_mod.rs
+│           ├── providers_deepseek.rs
+│           └── providers_stepfun.rs
 ├── gnome-shell-extension/        # GNOME Shell 扩展前端
 │   ├── extension.js              # 主扩展（顶栏按钮 + 弹出窗口）
 │   ├── popupMenu.js              # PopupMenu 版弹出窗口

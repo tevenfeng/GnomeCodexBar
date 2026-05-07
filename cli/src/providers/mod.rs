@@ -45,5 +45,5 @@ pub mod deepseek;
 pub mod stepfun;
 
 #[cfg(test)]
-#[path = "../tests/providers_mod.rs"]
+#[path = "../../tests/unit/providers_mod.rs"]
 mod tests;

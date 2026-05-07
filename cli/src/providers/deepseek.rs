@@ -114,5 +114,5 @@ struct DeepSeekBalanceInfo {
 }
 
 #[cfg(test)]
-#[path = "../tests/providers_deepseek.rs"]
+#[path = "../../tests/unit/providers_deepseek.rs"]
 mod tests;

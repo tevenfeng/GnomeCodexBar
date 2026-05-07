@@ -50,5 +50,5 @@ pub fn read_selected_provider_sync() -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "tests/output.rs"]
+#[path = "../tests/unit/output.rs"]
 mod tests;
