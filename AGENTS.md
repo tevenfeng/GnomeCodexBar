@@ -167,12 +167,50 @@ Rust 工具链路径（如通过 rustup 安装但 cargo 不在 PATH）：
 ~/.rustup/toolchains/stable-aarch64-apple-darwin/bin/
 ```
 
+## 单元测试
+
+### 测试架构
+
+CLI 后端使用 Rust 内置 `#[cfg(test)]` 模块进行单元测试，`cargo-llvm-cov` 生成覆盖率报告。
+
+### 一键测试
+
+```bash
+# 运行测试 + 覆盖率报告
+./test.sh
+
+# 仅运行测试（跳过覆盖率）
+./test.sh --no-cov
+
+# 手动运行
+cd cli && cargo test
+
+# HTML 覆盖率报告
+cd cli && cargo llvm-cov --html --open
+```
+
+### 测试覆盖范围
+
+| 模块 | 测试数 | 覆盖内容 |
+|------|--------|---------|
+| `config.rs` | 6 | Config 默认值、TOML 序列化/反序列化、ProviderConfig 映射、skip_serializing_if |
+| `output.rs` | 4 | StatusSnapshot/ProviderStatus JSON 序列化、selected_provider 读写逻辑 |
+| `providers/mod.rs` | 6 | ProviderConfig/ProviderStatus/StatusSnapshot 序列化 + error 字段处理 |
+| `providers/deepseek.rs` | 6 | Balance API 响应反序列化、余额计算逻辑、Provider id/name |
+| `providers/stepfun.rs` | 25 | FlexibleNumber/Timestamp/IntOrString 反序列化、parse_timestamp、build_status、extract_set_cookie、各响应类型反序列化 |
+
+**共 47 个单元测试，覆盖所有纯逻辑函数。** 网络依赖的 `Provider::fetch()` 暂未覆盖（需 HTTP mock）。
+
+### 测试约定
+
+- **纯逻辑优先**：优先测试数据转换、序列化、解析等不依赖网络的函数
+- **同文件测试**：私有类型（`FlexibleNumber` 等）的测试必须放在同文件的 `#[cfg(test)] mod tests` 中
+- **StepFun 灵活类型**：每次新增 StepFun API 解析逻辑，务必为对应的灵活类型反序列化器添加测试
+- **status.json 契约**：ProviderStatus 和 StatusSnapshot 的序列化测试确保后端-前端数据格式一致
+
 ## 已知问题
 
-详见 [FIX_PLAN.md](./FIX_PLAN.md)：
-
-1. **弹出窗口不自动消隐**：popup 使用 `addChrome` 裸控件，缺少 click-outside 关闭逻辑
-2. **StepFun 进度条不满**：fill 使用 `St.BoxLayout` 导致 CSS width 被布局压缩，需改用 `St.Widget`
+~~详见 [FIX_PLAN.md](./FIX_PLAN.md)~~（已修复）
 
 ## 注意事项
 

@@ -143,6 +143,34 @@ gnome-extensions enable codex-bar@gnome
 | `codex-bar-cli budget <amount>` | 设置月度预算 |
 | `codex-bar-cli select <provider>` | 切换顶栏显示的 Provider |
 
+## 测试
+
+```bash
+# 一键运行测试 + 覆盖率报告
+./test.sh
+
+# 仅运行测试（跳过覆盖率）
+./test.sh --no-cov
+
+# 手动运行
+cd cli && cargo test
+
+# 生成 HTML 覆盖率报告
+cd cli && cargo llvm-cov --html --open
+```
+
+### 测试覆盖
+
+| 模块 | 测试数 | 覆盖内容 |
+|------|--------|---------|
+| `config.rs` | 6 | 配置默认值、TOML 序列化/反序列化、Provider 配置映射 |
+| `output.rs` | 4 | StatusSnapshot 序列化、selected_provider 读写 |
+| `providers/mod.rs` | 6 | ProviderStatus/StatusSnapshot 序列化、error 字段 |
+| `providers/deepseek.rs` | 6 | Balance API 响应解析、余额逻辑、Provider id/name |
+| `providers/stepfun.rs` | 25 | 灵活类型反序列化、parse_timestamp、build_status、extract_set_cookie |
+
+共 47 个单元测试，覆盖所有纯逻辑函数（网络请求需 mock，暂未覆盖）。
+
 ## 项目结构
 
 ```
@@ -166,7 +194,8 @@ GnomeCodexBar/
 │   ├── prefs.js                  # 偏好设置
 │   ├── metadata.json             # 扩展元数据
 │   └── schemas/                  # GSettings schema
-└── install.sh                    # 一键安装脚本
+├── install.sh                    # 一键安装脚本
+└── test.sh                       # 一键测试脚本
 ```
 
 ## License
