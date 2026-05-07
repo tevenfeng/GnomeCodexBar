@@ -59,6 +59,7 @@ export default class CodexBarExtension extends Extension {
         this._ifaceSettings = Gio.Settings.new('org.gnome.desktop.interface');
         const onTheme = () => {
             if (this._popup?.visible) {
+                this._popup.style = this._isLight() ? 'background-color:#fafafa;' : 'background-color:#2a2a2a;';
                 this._popup.destroy_all_children();
                 this._show();
             }
@@ -76,7 +77,7 @@ export default class CodexBarExtension extends Extension {
         this._btn.set_child(bb);
         Main.panel._rightBox.insert_child_at_index(this._btn, 0);
 
-        this._popup = new St.BoxLayout({ vertical:true, style_class:'codex-bar-popup', reactive:true });
+        this._popup = new St.BoxLayout({ vertical:true, style_class:'codex-bar-popup', reactive:true, style:'background-color:#2a2a2a;' });
         this._popup.hide();
         Main.layoutManager.addChrome(this._popup, { affectsInputRegion: true });
 
@@ -224,10 +225,13 @@ export default class CodexBarExtension extends Extension {
 
     _show() {
         this._popup.destroy_all_children();
-        if (this._isLight()) {
+        const light = this._isLight();
+        if (light) {
             this._popup.add_style_class_name('codex-bar-light');
+            this._popup.style = 'background-color:#fafafa;';
         } else {
             this._popup.remove_style_class_name('codex-bar-light');
+            this._popup.style = 'background-color:#2a2a2a;';
         }
         this._build();
         const [bx,by] = this._btn.get_transformed_position();
