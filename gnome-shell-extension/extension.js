@@ -242,8 +242,8 @@ export default class CodexBarExtension extends Extension {
             ? `margin:4px 12px; padding:10px 12px; border:1px solid ${c.borderSel}; border-radius:8px; background:${c.bgCardSel};`
             : `margin:4px 12px; padding:10px 12px; border:1px solid ${c.border}; border-radius:8px; background:${c.bgCard};`;
         const sec = new St.BoxLayout({ vertical:true, style:cardStyle });
-        const hdr = new St.Button({ reactive:true, can_focus:true, track_hover:true, x_expand:true, style:'background:transparent; border:none; padding:0;' });
-        const hb = new St.BoxLayout({});
+        const hdr = new St.Button({ reactive:true, can_focus:true, track_hover:true, style:'background:transparent; border:none; padding:0;' });
+        const hb = new St.BoxLayout({ style:'x-align:start;' });
         hb.add_child(new St.Label({ text:is?'\u25C9':'\u25CB', style:is?`color:${c.accent}; width:22px; font-size:15px;`:`color:${c.faint}; width:22px; font-size:15px;` }));
         hb.add_child(new St.Label({ text:nm, style:is?`color:${c.accent}; font-size:13px; font-weight:600;`:`color:${c.sub}; font-size:13px; font-weight:600;` }));
         hdr.set_child(hb);
@@ -279,16 +279,14 @@ export default class CodexBarExtension extends Extension {
         let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
         const row = new St.BoxLayout({ style: 'padding:3px 0 3px 24px;' });
         row.add_child(new St.Label({ text: `${label}:`, style: `font-size:10px; color:${c.dim}; margin-right:8px; min-width:36px;` }));
-        const body = new St.BoxLayout({ vertical: true });
         const segs = new St.BoxLayout({ style: `width:${w2}px; height:6px; spacing:0;` });
         segs.add_child(new St.Widget({ style: `width:${f}px; height:6px; border-radius:3px 0 0 3px;`, style_class: `codex-bar-bar-fill ${cl}` }));
         segs.add_child(new St.Widget({ style: `width:${w2 - f}px; height:6px; border-radius:0 3px 3px 0; background-color:${c.bgBar};` }));
-        body.add_child(segs);
-        const info = new St.BoxLayout({});
-        info.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}`, x_expand: true }));
-        info.add_child(new St.Label({ text: `reset ${this._r(resetTime)}`, style: `font-size:9px; color:${c.faint};` }));
-        body.add_child(info);
-        row.add_child(body);
+        const barWrap = new St.BoxLayout({ style: 'margin-right:8px;' });
+        barWrap.add_child(segs);
+        row.add_child(barWrap);
+        row.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}`, style: 'margin-right:8px;' }));
+        row.add_child(new St.Label({ text: `reset ${this._r(resetTime)}`, style: `font-size:9px; color:${c.faint};` }));
         return row;
     }
 
