@@ -27,6 +27,7 @@ const C = {
         bgCardSel: 'rgba(53,132,228,0.12)',
         bgBar: 'rgba(255,255,255,0.12)',
         borderFt: 'rgba(255,255,255,0.08)',
+        divider: 'rgba(255,255,255,0.08)',
         btnBg: 'rgba(255,255,255,0.08)',
         btnBgHover: 'rgba(255,255,255,0.15)',
     },
@@ -47,6 +48,7 @@ const C = {
         bgCardSel: 'rgba(26,109,212,0.08)',
         bgBar: 'rgba(0,0,0,0.1)',
         borderFt: 'rgba(0,0,0,0.08)',
+        divider: 'rgba(0,0,0,0.08)',
         btnBg: 'rgba(0,0,0,0.06)',
         btnBgHover: 'rgba(0,0,0,0.12)',
     },
@@ -145,35 +147,55 @@ export default class CodexBarExtension extends Extension {
     /** Returns true if the system is using a light theme */
     _isLight() {
         const colorScheme = this._ifaceSettings?.get_enum('color-scheme') ?? 0;
-        if (colorScheme === 2) return true;   // 2 = prefer-light
-        if (colorScheme === 1) return false;  // 1 = prefer-dark
-        // 0 = default/no preference
-        // Fallback 1: gtk-theme name
+        if (colorScheme === 2) return true;
+        if (colorScheme === 1) return false;
         try {
             const theme = this._ifaceSettings?.get_string('gtk-theme') || '';
             if (/light/i.test(theme)) return true;
             if (/dark/i.test(theme)) return false;
         } catch (e) {}
-        // Fallback 2: panel background luminance
         try {
             const node = Main.panel._centerBox.get_theme_node();
             const [ok, color] = node.lookup_color('background-color', false);
-            if (ok) { return color.luminance >= 0.5; }
+            if (ok) return color.luminance >= 0.5;
         } catch (e) {}
-        return false; // assume dark
+        return false;
     }
 
-    /** Get the color palette for current theme */
-    _c() {
-        return this._isLight() ? C.light : C.dark;
-    }
+    _c() { return this._isLight() ? C.light : C.dark; }
 
-    /** Status color based on percentage and theme */
     _statusColor(v) {
         const c = this._c();
         if (v < 20) return c.err;
         if (v < 50) return c.warn;
         return c.ok;
+    }
+
+    /** Format a relative time string for "Updated X前" */
+    _ago(ts) {
+        if (!ts) return 'just now';
+        try {
+            const diff = Date.now() - new Date(ts).getTime();
+            if (diff < 60000) return 'just now';
+            const m = Math.floor(diff / 60000);
+            if (m < 60) return `${m}m ago`;
+            const h = Math.floor(m / 60);
+            if (h < 24) return `${h}h ago`;
+            return `${Math.floor(h / 24)}d ago`;
+        } catch (e) { return 'just now'; }
+    }
+
+    /** Format a relative time string for "Resets in X" */
+    _resetIn(ts) {
+        if (!ts) return null;
+        try {
+            const d = new Date(ts).getTime() - Date.now();
+            if (d < 0) return 'now';
+            const h = Math.floor(d / 3600000), m = Math.floor((d % 3600000) / 60000);
+            if (h > 24) return `${Math.floor(h / 24)}d ${h % 24 > 0 ? (h % 24) + 'h' : ''}`;
+            if (h > 0) return `${h}h${m > 0 ? m + 'm' : ''}`;
+            return `${m}m`;
+        } catch (e) { return null; }
     }
 
     _updatePanel() {
@@ -202,9 +224,7 @@ export default class CodexBarExtension extends Extension {
 
     _show() {
         this._popup.destroy_all_children();
-        // Apply theme class to popup
-        const light = this._isLight();
-        if (light) {
+        if (this._isLight()) {
             this._popup.add_style_class_name('codex-bar-light');
         } else {
             this._popup.remove_style_class_name('codex-bar-light');
@@ -213,7 +233,7 @@ export default class CodexBarExtension extends Extension {
         const [bx,by] = this._btn.get_transformed_position();
         const [bw,bh] = this._btn.get_transformed_size();
         const m = Main.layoutManager.primaryMonitor;
-        let pw = this._popup.get_preferred_width(-1)[1]; if (pw<100) pw=340;
+        let pw = this._popup.get_preferred_width(-1)[1]; if (pw<100) pw=310;
         let px = bx + (bw-pw)/2;
         if (px < m.x) px = m.x+8;
         if (px+pw > m.x+m.width) px = m.x+m.width-pw-8;
@@ -223,90 +243,146 @@ export default class CodexBarExtension extends Extension {
 
     _build() {
         const c = this._c();
-        const r = new St.BoxLayout({ vertical:true, style_class:'codex-bar-container' });
-        r.add_child(new St.Label({ text:'Codex Bar', style_class:'codex-bar-title', x_expand:true }));
         const s = StatusReader.readStatus(), sel = StatusReader.readSelectedProvider();
+        const r = new St.BoxLayout({ vertical:true, style_class:'codex-bar-container' });
+
+        // Title row: "Codex Bar" + refresh button
+        const titleRow = new St.BoxLayout({ style: 'margin-bottom:8px;' });
+        titleRow.add_child(new St.Label({ text:'Codex Bar', style_class:'codex-bar-title', x_expand:true }));
+        const refBtn = new St.Button({ label:'\u21BB', style_class:'codex-bar-refresh-btn', style:`color:${c.faint}; font-size:14px; padding:2px 6px; border-radius:4px;` });
+        refBtn.connect('button-press-event', () => {
+            try { GLib.spawn_command_line_async('codex-bar-cli fetch'); } catch(e) {}
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                this._updatePanel();
+                if (this._popup?.visible) { this._popup.destroy_all_children(); this._show(); }
+                return GLib.SOURCE_REMOVE;
+            });
+            return Clutter.EVENT_STOP;
+        });
+        titleRow.add_child(refBtn);
+        r.add_child(titleRow);
+
         if (!s?.providers) {
-            r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:11px; color:${c.muted}; padding:12px;` }));
+            r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
         } else {
-            for (const pr of s.providers) this._addProv(r, pr, sel);
-            this._addFt(r);
+            const providers = s.providers;
+            for (let i = 0; i < providers.length; i++) {
+                if (i > 0) {
+                    // Divider between providers
+                    r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+                }
+                this._addProviderSection(r, providers[i], sel, s.updated_at);
+            }
         }
         this._popup.add_child(r);
     }
 
-    _addProv(r, pr, sel) {
+    _addProviderSection(r, pr, sel, updatedAt) {
         const c = this._c();
-        const pid=pr.provider_id, nm=P[pid]||pid, is=pid===sel;
-        const cardStyle = is
-            ? `margin:4px 12px; padding:10px 12px; border:1px solid ${c.borderSel}; border-radius:8px; background:${c.bgCardSel};`
-            : `margin:4px 12px; padding:10px 12px; border:1px solid ${c.border}; border-radius:8px; background:${c.bgCard};`;
-        const sec = new St.BoxLayout({ vertical:true, style:cardStyle });
-        const hdr = new St.Button({ reactive:true, can_focus:true, track_hover:true, style:'background:transparent; border:none; padding:0;' });
-        const hb = new St.BoxLayout({ style:'x-align:start;' });
-        hb.add_child(new St.Label({ text:is?'\u25C9':'\u25CB', style:is?`color:${c.accent}; width:22px; font-size:15px;`:`color:${c.faint}; width:22px; font-size:15px;` }));
-        hb.add_child(new St.Label({ text:nm, style:is?`color:${c.accent}; font-size:13px; font-weight:600;`:`color:${c.sub}; font-size:13px; font-weight:600;` }));
-        hdr.set_child(hb);
-        hdr.connect('button-press-event', () => { StatusReader.writeSelectedProvider(pid); this._updatePanel(); this._popup.destroy_all_children(); this._build(); this._popup.show(); return Clutter.EVENT_STOP; });
+        const pid = pr.provider_id, nm = P[pid] || pid, is = pid === sel;
+        const d = pr.details || {};
+
+        // Background tint for selected provider
+        const secStyle = is
+            ? `padding:10px 12px; border-radius:8px; background:${c.bgCardSel};`
+            : `padding:10px 12px; border-radius:8px; background:${c.bgCard};`;
+        const sec = new St.BoxLayout({ vertical: true, style: secStyle });
+
+        // Header: clickable to switch provider
+        const hdr = new St.Button({ reactive: true, can_focus: true, track_hover: true, x_expand: true, style: 'background:transparent; border:none; padding:0;' });
+        const hdrContent = new St.BoxLayout({ vertical: true, x_expand: true });
+
+        // Row 1: Name + Plan tag
+        const nameRow = new St.BoxLayout({ x_expand: true });
+        nameRow.add_child(new St.Label({ text: nm, x_expand: true, style: is ? `font-size:16px; font-weight:600; color:${c.accent};` : `font-size:16px; font-weight:600; color:${c.sub};` }));
+        // Plan tag (StepFun only)
+        if (pid === 'stepfun' && d.plan_name) {
+            nameRow.add_child(new St.Label({ text: d.plan_name, style: `font-size:12px; color:${c.muted};` }));
+        }
+        hdrContent.add_child(nameRow);
+
+        // Row 2: Updated time
+        hdrContent.add_child(new St.Label({ text: `Updated ${this._ago(updatedAt)}`, style: `font-size:12px; color:${c.faint}; margin-top:2px;` }));
+
+        hdr.set_child(hdrContent);
+        hdr.connect('button-press-event', () => {
+            StatusReader.writeSelectedProvider(pid);
+            this._updatePanel();
+            this._popup.destroy_all_children();
+            this._show();
+            return Clutter.EVENT_STOP;
+        });
         sec.add_child(hdr);
-        if (pr.error) sec.add_child(new St.Label({ text:`Error: ${pr.error}`, style:`font-size:11px; color:${c.err}; padding:4px 0 0 22px;` }));
-        else this._dtl(sec, pr);
+
+        // Divider between header and bars
+        sec.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+
+        // Details
+        if (pr.error) {
+            sec.add_child(new St.Label({ text: `Error: ${pr.error}`, style: `font-size:12px; color:${c.err};` }));
+        } else {
+            this._addDetails(sec, pr);
+        }
+
         r.add_child(sec);
     }
 
-    _dtl(sec, pr) {
+    _addDetails(sec, pr) {
         const c = this._c();
-        const pid=pr.provider_id, d=pr.details||{};
-        if (pid==='deepseek') {
-            const cu=d.currency||'CNY', s=cu==='USD'?'$':'\u00A5';
-            for (const [l,k] of [['Balance','total_balance'],['Granted','granted_balance'],['Topped Up','topped_up_balance']]) {
-                const v=+d[k]||0;
-                const row=new St.BoxLayout({ style:'padding:2px 0 2px 24px;' });
-                row.add_child(new St.Label({ text:l+': ', style:`font-size:11px; color:${c.dim};` }));
-                row.add_child(new St.Label({ text:`${s}${v.toFixed(2)}`, style:`font-size:11px; color:${c.val}; font-family:monospace;` }));
-                sec.add_child(row);
-            }
+        const pid = pr.provider_id, d = pr.details || {};
+
+        if (pid === 'deepseek') {
+            // Balance bar
+            const hasBalance = (+d.total_balance || 0) > 0;
+            const pct = hasBalance ? 100 : 0;
+            this._addBar(sec, 'Balance', pct, null);
+
+            // Balance detail text
+            const cu = d.currency || 'CNY', s = cu === 'USD' ? '$' : '\u00A5';
+            const total = +d.total_balance || 0;
+            const paid = +d.topped_up_balance || 0;
+            const granted = +d.granted_balance || 0;
+            sec.add_child(new St.Label({
+                text: `${s}${total.toFixed(2)} (Paid: ${s}${paid.toFixed(2)} / Granted: ${s}${granted.toFixed(2)})`,
+                style: `font-size:11px; color:${c.muted}; margin-top:4px;`
+            }));
         } else {
-            const dn=d.plan_name||'Unknown';
-            sec.add_child(new St.Label({ text:`Plan: ${dn}`, style:`font-size:11px; color:${c.accent}; font-weight:bold; padding:2px 0 2px 24px;` }));
-            if (d.five_hour_usage_left_rate!=null) sec.add_child(this._barP(d.five_hour_usage_left_rate, '5h', d.five_hour_usage_reset_time));
-            if (d.weekly_usage_left_rate!=null) sec.add_child(this._barP(d.weekly_usage_left_rate, 'Week', d.weekly_usage_reset_time));
+            // StepFun: 5h Window + Weekly Window
+            if (d.five_hour_usage_left_rate != null) {
+                const pct = Math.round(d.five_hour_usage_left_rate * 100);
+                this._addBar(sec, '5h Window', pct, d.five_hour_usage_reset_time);
+            }
+            if (d.weekly_usage_left_rate != null) {
+                const pct = Math.round(d.weekly_usage_left_rate * 100);
+                this._addBar(sec, 'Weekly Window', pct, d.weekly_usage_reset_time);
+            }
         }
     }
 
-    _barP(rate, label, resetTime) {
-        const c = this._c(), pct = Math.round(rate * 100), w2 = 140, f = Math.max(0, Math.round(rate * w2));
-        let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
-        const box = new St.BoxLayout({ vertical: true, style: 'padding:3px 0 3px 24px;' });
-        // Row 1: label + progress bar + percentage
-        const row = new St.BoxLayout({ style: 'spacing:8px;' });
-        row.add_child(new St.Label({ text: `${label}:`, style: `font-size:10px; color:${c.dim}; min-width:36px;` }));
-        const bar = new St.Widget({ style_class: 'codex-bar-bar-bg', style: `width:${w2}px; height:6px;` });
-        bar.add_child(new St.Widget({ style: `width:${f}px; height:6px;`, style_class: `codex-bar-bar-fill ${cl}` }));
-        row.add_child(bar);
-        row.add_child(new St.Label({ text: `${pct}%`, style_class: `codex-bar-percent ${cl}` }));
-        box.add_child(row);
-        // Row 2: reset time (right-aligned)
-        box.add_child(new St.Label({
-            text: `reset ${this._r(resetTime)}`,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.END,
-            style: `font-size:9px; color:${c.faint}; padding-right:4px;`
-        }));
-        return box;
-    }
-
-    _addFt(r) {
+    _addBar(parent, title, pct, resetTime) {
         const c = this._c();
-        const f=new St.BoxLayout({ style:`padding:8px 12px; border-top:1px solid ${c.borderFt}; margin-top:4px;` });
-        const st=StatusReader.readStatus();
-        f.add_child(new St.Label({ text:st?.updated_at?new Date(st.updated_at).toLocaleTimeString():'Never', style:`font-size:10px; color:${c.faint};` }));
-        f.add_child(new St.Widget({ x_expand:true }));
-        const btn=new St.Button({ label:'\u21BB Refresh', style_class:'codex-bar-button' });
-        btn.connect('button-press-event', () => { try{GLib.spawn_command_line_async('codex-bar-cli fetch');}catch(e){} GLib.timeout_add(GLib.PRIORITY_DEFAULT,2000,()=>{this._updatePanel(); if(this._popup.visible){this._popup.destroy_all_children();this._build();} return GLib.SOURCE_REMOVE;}); return Clutter.EVENT_STOP; });
-        f.add_child(btn);
-        r.add_child(f);
-    }
+        const box = new St.BoxLayout({ vertical: true, style: 'margin-top:10px;' });
 
-    _r(ts) { if(!ts)return'--'; try{const d=new Date(ts)-Date.now(); if(d<0)return'now'; const h=Math.floor(d/36e5),m=Math.floor((d%36e5)/6e4); if(h>24)return`${Math.floor(h/24)}d`; if(h>0)return`${h}h${m>0?m+'m':''}`; return`${m}m`;}catch(e){return'--';} }
+        // Title row
+        box.add_child(new St.Label({ text: title, style: `font-size:14px; font-weight:600; color:${c.text};` }));
+
+        // Progress bar
+        const barW = 250, barH = 8, fillW = Math.max(0, Math.round(pct / 100 * barW));
+        let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
+        const bar = new St.Widget({ style_class: 'codex-bar-bar-bg', style: `width:${barW}px; height:${barH}px; margin:6px 0 4px 0;` });
+        bar.add_child(new St.Widget({ style: `width:${fillW}px; height:${barH}px;`, style_class: `codex-bar-bar-fill ${cl}` }));
+        box.add_child(bar);
+
+        // Info row: "X% left" left + "Resets in X" right
+        const infoRow = new St.BoxLayout({ x_expand: true });
+        infoRow.add_child(new St.Label({ text: `${pct}% left`, style: `font-size:12px; color:${c.dim};` }));
+        infoRow.add_child(new St.Widget({ x_expand: true }));
+        const resetStr = this._resetIn(resetTime);
+        if (resetStr) {
+            infoRow.add_child(new St.Label({ text: `Resets in ${resetStr}`, style: `font-size:12px; color:${c.faint};` }));
+        }
+        box.add_child(infoRow);
+
+        parent.add_child(box);
+    }
 }
