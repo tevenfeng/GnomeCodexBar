@@ -142,6 +142,29 @@ gnome-extensions enable codex-bar@gnome
 | `codex-bar-cli status` | 显示当前状态 |
 | `codex-bar-cli budget <amount>` | 设置月度预算 |
 | `codex-bar-cli select <provider>` | 切换顶栏显示的 Provider |
+| `codex-bar-cli autostart enable` | 启用开机自启动守护进程 |
+| `codex-bar-cli autostart disable` | 禁用开机自启动 |
+| `codex-bar-cli autostart status` | 查看自启动状态 |
+
+## 开机自启动
+
+CLI 支持开机自启动守护进程，自动检测平台：
+
+```bash
+# 启用开机自启动
+codex-bar-cli autostart enable
+
+# 禁用开机自启动
+codex-bar-cli autostart disable
+
+# 查看自启动状态
+codex-bar-cli autostart status
+```
+
+| 平台 | 机制 | 说明 |
+|------|------|------|
+| Linux (ZorinOS) | systemd user service | `After=network-online.target`，`Restart=on-failure` |
+| macOS | launchd plist | `KeepAlive=true`，日志输出到 `~/.local/share/gnome-codex-bar/logs/` |
 
 ## 测试
 
@@ -192,8 +215,9 @@ cli/
 | `providers/mod.rs` | 6 | ProviderStatus/StatusSnapshot 序列化、error 字段 |
 | `providers/deepseek.rs` | 6 | Balance API 响应解析、余额逻辑、Provider id/name |
 | `providers/stepfun.rs` | 25 | 灵活类型反序列化、parse_timestamp、build_status、extract_set_cookie |
+| `autostart.rs` | 8 | 平台检测、systemd/launchd 路径、service/plist 内容生成 |
 
-共 47 个单元测试，覆盖所有纯逻辑函数（网络请求需 mock，暂未覆盖）。
+共 55 个单元测试，覆盖所有纯逻辑函数（网络请求需 mock，暂未覆盖）。
 
 ## 项目结构
 
@@ -203,6 +227,7 @@ GnomeCodexBar/
 │   ├── src/
 │   │   ├── main.rs               # CLI 入口 & 子命令
 │   │   ├── daemon.rs             # 守护进程循环
+│   │   ├── autostart.rs          # 开机自启动 (systemd/launchd)
 │   │   ├── config.rs             # 配置加载 (TOML)
 │   │   ├── output.rs             # 写入 status.json
 │   │   └── providers/
@@ -215,7 +240,8 @@ GnomeCodexBar/
 │           ├── output.rs
 │           ├── providers_mod.rs
 │           ├── providers_deepseek.rs
-│           └── providers_stepfun.rs
+│           ├── providers_stepfun.rs
+│           └── autostart.rs
 ├── gnome-shell-extension/        # GNOME Shell 扩展前端
 │   ├── extension.js              # 主扩展（顶栏按钮 + 弹出窗口）
 │   ├── popupMenu.js              # PopupMenu 版弹出窗口

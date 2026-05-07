@@ -1,3 +1,4 @@
+mod autostart;
 mod config;
 mod daemon;
 mod output;
@@ -52,6 +53,11 @@ enum Commands {
     Select {
         /// Provider id (deepseek or stepfun)
         provider: String,
+    },
+    /// Manage auto-start of the daemon on login
+    Autostart {
+        /// Action: enable, disable, or status
+        action: String,
     },
 }
 
@@ -135,6 +141,29 @@ async fn main() -> anyhow::Result<()> {
         Commands::Select { provider } => {
             output::write_selected_provider_sync(&provider)?;
             println!("Selected provider in panel: {}", provider);
+        }
+
+        Commands::Autostart { action } => {
+            match action.as_str() {
+                "enable" => {
+                    let msg = autostart::enable()?;
+                    println!("{}", msg);
+                }
+                "disable" => {
+                    let msg = autostart::disable()?;
+                    println!("{}", msg);
+                }
+                "status" => {
+                    let msg = autostart::status()?;
+                    println!("{}", msg);
+                }
+                _ => {
+                    anyhow::bail!(
+                        "Unknown autostart action '{}'. Use: enable, disable, or status",
+                        action
+                    );
+                }
+            }
         }
     }
 

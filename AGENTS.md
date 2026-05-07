@@ -35,6 +35,7 @@ Rust CLI daemon
 |------|------|
 | `src/main.rs` | CLI 入口，clap 子命令定义 |
 | `src/daemon.rs` | 守护进程循环 + `fetch_all()` 并行拉取所有 Provider |
+| `src/autostart.rs` | 开机自启动管理（Linux systemd / macOS launchd） |
 | `src/config.rs` | TOML 配置加载，`~/.config/codex-bar/config.toml` |
 | `src/output.rs` | 写入 `status.json` + `selected_provider.json` |
 | `src/providers/mod.rs` | `Provider` trait + `ProviderStatus` / `StatusSnapshot` 类型定义 |
@@ -144,6 +145,8 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 | `~/.local/share/gnome-codex-bar/selected_provider.json` | 当前选中的 Provider |
 | `~/.local/share/gnome-shell/extensions/codex-bar@gnome/` | 扩展安装目录 |
 | `~/.local/share/glib-2.0/schemas/` | GSettings schema |
+| `~/.config/systemd/user/codex-bar-cli.service` | systemd user service（Linux 自启动） |
+| `~/Library/LaunchAgents/com.codexbar.cli.plist` | launchd plist（macOS 自启动） |
 
 ## 构建与开发
 
@@ -166,6 +169,42 @@ Rust 工具链路径（如通过 rustup 安装但 cargo 不在 PATH）：
 ```
 ~/.rustup/toolchains/stable-aarch64-apple-darwin/bin/
 ```
+
+## 开机自启动
+
+CLI 支持 `autostart` 子命令管理守护进程的开机自启动：
+
+```bash
+# 启用开机自启动
+codex-bar-cli autostart enable
+
+# 禁用开机自启动
+codex-bar-cli autostart disable
+
+# 查看自启动状态
+codex-bar-cli autostart status
+```
+
+运行时自动检测平台，选择对应机制：
+
+| 平台 | 机制 | 服务文件 |
+|------|------|---------|
+| Linux (ZorinOS 等) | systemd user service | `~/.config/systemd/user/codex-bar-cli.service` |
+| macOS | launchd plist | `~/Library/LaunchAgents/com.codexbar.cli.plist` |
+
+### systemd (Linux)
+
+- `enable`：写入 service 文件 → `daemon-reload` → `enable` → `start`
+- `disable`：`stop` → `disable` → 删除 service 文件 → `daemon-reload`
+- `Restart=on-failure` + `RestartSec=10`：崩溃后自动重启
+- `After=network-online.target`：等待网络就绪
+
+### launchd (macOS)
+
+- `enable`：写入 plist → `launchctl load`
+- `disable`：`launchctl unload` → 删除 plist
+- `KeepAlive = true`：进程退出后自动重启
+- 日志输出到 `~/.local/share/gnome-codex-bar/logs/daemon.log` 和 `daemon.err`
 
 ## 单元测试
 
@@ -190,7 +229,8 @@ cli/
         ├── output.rs               # output.rs 的测试
         ├── providers_mod.rs        # providers/mod.rs 的测试
         ├── providers_deepseek.rs   # providers/deepseek.rs 的测试
-        └── providers_stepfun.rs    # providers/stepfun.rs 的测试
+        ├── providers_stepfun.rs    # providers/stepfun.rs 的测试
+        └── autostart.rs            # autostart.rs 的测试
 ```
 
 这种方式的优点：
@@ -224,8 +264,9 @@ cd cli && cargo llvm-cov --html --open
 | `providers/mod.rs` | 6 | ProviderConfig/ProviderStatus/StatusSnapshot 序列化 + error 字段处理 |
 | `providers/deepseek.rs` | 6 | Balance API 响应反序列化、余额计算逻辑、Provider id/name |
 | `providers/stepfun.rs` | 25 | FlexibleNumber/Timestamp/IntOrString 反序列化、parse_timestamp、build_status、extract_set_cookie、各响应类型反序列化 |
+| `autostart.rs` | 8 | 平台检测、systemd/launchd 文件路径、service/plist 内容生成、网络依赖、绝对路径 |
 
-**共 47 个单元测试，覆盖所有纯逻辑函数。** 网络依赖的 `Provider::fetch()` 暂未覆盖（需 HTTP mock）。
+**共 55 个单元测试，覆盖所有纯逻辑函数。** 网络依赖的 `Provider::fetch()` 暂未覆盖（需 HTTP mock）。
 
 ### 测试约定
 
