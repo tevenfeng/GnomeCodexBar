@@ -21,21 +21,21 @@ struct ProviderCardView: View {
                     HStack {
                         Text(provider.providerName)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(isSelected
-                                             ? (colorScheme == .dark ? Color(red: 0.21, green: 0.52, blue: 0.89) : Color(red: 0.1, green: 0.43, blue: 0.83))
-                                             : (colorScheme == .dark ? Color.white.opacity(0.8) : Color(red: 0.2, green: 0.2, blue: 0.2)))
+                            .foregroundColor(colorScheme == .dark
+                                             ? (isSelected ? Color(red: 0.35, green: 0.65, blue: 1.0) : .white.opacity(0.9))
+                                             : (isSelected ? Color(red: 0.1, green: 0.43, blue: 0.83) : Color(red: 0.1, green: 0.1, blue: 0.1)))  // #1A1A1A
                         Spacer()
                         // Plan tag (StepFun only)
                         if provider.providerId == "stepfun", let plan = d["plan_name"]?.stringValue {
                             Text(plan)
                                 .font(.system(size: 12))
-                                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.6) : Color(red: 0.4, green: 0.4, blue: 0.4))
+                                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))  // #999
                         }
                     }
                     // Row 2: Updated time
                     Text("Updated \(reader.ago(updatedAt))")
                         .font(.system(size: 12))
-                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))  // #999
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
@@ -43,7 +43,7 @@ struct ProviderCardView: View {
 
             // Divider
             Rectangle()
-                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(red: 0.88, green: 0.88, blue: 0.88))  // #E0E0E0
                 .frame(height: 1)
                 .padding(.vertical, 8)
 
@@ -56,17 +56,6 @@ struct ProviderCardView: View {
                 detailsContent
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected
-                      ? (colorScheme == .dark
-                         ? Color(red: 0.21, green: 0.52, blue: 0.89).opacity(0.12)
-                         : Color(red: 0.1, green: 0.43, blue: 0.83).opacity(0.08))
-                      : (colorScheme == .dark
-                         ? Color.white.opacity(0.05)
-                         : Color.black.opacity(0.04)))
-        )
     }
 
     @ViewBuilder
@@ -96,7 +85,7 @@ struct ProviderCardView: View {
 
             Text("\(sym)\(String(format: "%.2f", total)) (Paid: \(sym)\(String(format: "%.2f", paid)) / Granted: \(sym)\(String(format: "%.2f", granted)))")
                 .font(.system(size: 11))
-                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.6) : Color(red: 0.4, green: 0.4, blue: 0.4))
+                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))  // #999
                 .padding(.top, 4)
         }
     }

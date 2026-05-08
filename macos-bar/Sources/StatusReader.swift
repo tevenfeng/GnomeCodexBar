@@ -147,20 +147,25 @@ class StatusReader: ObservableObject {
         return s.providers.first
     }
 
-    /// Summary text for menu bar button
+    /// Summary text for menu bar button (selected provider only)
     var summaryText: String {
         guard let pr = activeProvider else { return "--" }
         if pr.error != nil { return "ERR" }
-        let sel = selectedProvider ?? "stepfun"
-        if sel == "deepseek" {
+        if pr.providerId == "deepseek" {
             let d = pr.details
             let t = d["total_balance"]?.doubleValue ?? 0
             let cu = d["currency"]?.stringValue ?? "CNY"
             let sym = cu == "USD" ? "$" : "¥"
             return "\(sym)\(String(format: "%.2f", t))"
         } else {
-            let v = Int(pr.remainingPercent.rounded())
-            return "\(v)%"
+            // StepFun: show 5h window remaining percent
+            if let rate = pr.details["five_hour_usage_left_rate"]?.doubleValue {
+                let pct = Int((rate * 100).rounded())
+                return "\(pct)%"
+            } else {
+                let v = Int(pr.remainingPercent.rounded())
+                return "\(v)%"
+            }
         }
     }
 

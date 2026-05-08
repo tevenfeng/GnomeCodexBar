@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Main popover content: title + provider cards + refresh button
+/// Main popover content: title + provider cards + refresh/settings buttons
 struct PopoverContent: View {
     @ObservedObject var reader: StatusReader
     @Environment(\.colorScheme) private var colorScheme
@@ -25,17 +25,35 @@ struct PopoverContent: View {
                         )
                 }
                 .buttonStyle(.plain)
+
+                Menu {
+                    Button("Quit Codex Bar") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                } label: {
+                    Text("⚙")
+                        .font(.system(size: 14))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                        )
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
             .padding(.bottom, 8)
 
-            // ── Provider cards ───────────────────
+            // ── Provider cards (stacked) ──────────
             if let status = reader.status, !status.providers.isEmpty {
                 let sel = reader.selectedProvider
                 ForEach(Array(status.providers.enumerated()), id: \.element.id) { index, provider in
                     if index > 0 {
                         // Divider between providers
                         Rectangle()
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(red: 0.88, green: 0.88, blue: 0.88))  // #E0E0E0
                             .frame(height: 1)
                             .padding(.vertical, 4)
                     }
@@ -56,8 +74,15 @@ struct PopoverContent: View {
                     .padding(.vertical, 8)
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .frame(width: 310)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(colorScheme == .dark
+                      ? Color(red: 0.15, green: 0.15, blue: 0.15).opacity(0.95)
+                      : Color(red: 0.96, green: 0.96, blue: 0.96))  // #F5F5F5
+        )
     }
 
     private func refresh() {

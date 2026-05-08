@@ -8,11 +8,8 @@ struct CodexBarApp: App {
         MenuBarExtra {
             PopoverContent(reader: reader)
         } label: {
-            HStack(spacing: 4) {
-                Text(reader.shortLabel)
-                    .font(.system(size: 10, weight: .medium))
-                Text(reader.summaryText)
-            }
+            Text("\(reader.shortLabel) \(reader.summaryText)")
+                .font(.system(size: 12, weight: .medium))
         }
         .menuBarExtraStyle(.window)
 

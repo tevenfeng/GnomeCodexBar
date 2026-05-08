@@ -41,6 +41,14 @@ swift build -c release 2>&1 | tail -3
 # Step 3: Install menu bar app as .app bundle
 echo ""
 echo "[3/4] Installing CodexBar.app to $APP_DIR..."
+
+# Kill running CodexBar app before deploying
+if pgrep -x "CodexBar" >/dev/null 2>&1; then
+    echo "      Stopping running CodexBar.app..."
+    pkill -x "CodexBar" 2>/dev/null || true
+    sleep 1
+fi
+
 mkdir -p "$APP_DIR"
 
 APP_BUNDLE="$APP_DIR/CodexBar.app"
