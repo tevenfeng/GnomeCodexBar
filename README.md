@@ -1,6 +1,20 @@
-# GnomeCodexBar
-
-跨平台顶栏工具 + Rust CLI 后端，用于实时监控 DeepSeek 和 StepFun 的编程套餐用量。
+<div align="center">
+  <img src="logo-output/png/logo-256.png" alt="CodexBar Logo" width="128" height="128">
+  
+  # GnomeCodexBar
+  
+  跨平台顶栏工具，实时监控 DeepSeek 和 StepFun 编程套餐用量
+  
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/backend-Rust-orange" alt="Backend">
+  <img src="https://img.shields.io/badge/tests-55%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  
+  ---
+  
+  🖥️ 顶栏实时显示 &nbsp;|&nbsp; 📊 进度条 + 详情弹窗 &nbsp;|&nbsp; 🔄 自动刷新 &nbsp;|&nbsp; 🌙 暗色主题 &nbsp;|&nbsp; 🚀 开机自启
+  
+</div>
 
 ## 功能
 
