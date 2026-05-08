@@ -6,6 +6,7 @@ import Combine
 class StatusReader: ObservableObject {
     @Published var status: StatusSnapshot?
     @Published var selectedProvider: String?
+    @Published var pollInterval: Double
 
     private var fileSource: DispatchSourceFileSystemObject?
     private var selectedSource: DispatchSourceFileSystemObject?
@@ -21,6 +22,9 @@ class StatusReader: ObservableObject {
             .appendingPathComponent("Library/Application Support/gnome-codex-bar")
         self.statusPath = dataDir.appendingPathComponent("status.json")
         self.selectedPath = dataDir.appendingPathComponent("selected_provider.json")
+
+        // Load saved poll interval (default: 5s)
+        self.pollInterval = UserDefaults.standard.object(forKey: "pollInterval") as? Double ?? 5.0
 
         readStatus()
         readSelectedProvider()
@@ -63,8 +67,16 @@ class StatusReader: ObservableObject {
             self?.readSelectedProvider()
         }
 
-        // Also poll every 5s as a fallback (DispatchSource can miss some events)
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        startPollTimer()
+    }
+
+    func restartPollTimer() {
+        pollTimer?.invalidate()
+        startPollTimer()
+    }
+
+    private func startPollTimer() {
+        pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.readStatus()
                 self?.readSelectedProvider()
@@ -101,6 +113,42 @@ class StatusReader: ObservableObject {
         } else {
             selectedSource = source
         }
+    }
+
+    // ── Provider enable/disable ───────────────────────
+
+    /// All provider IDs known from status data
+    var allProviderIDs: [String] {
+        status?.providers.map { $0.providerId } ?? ["deepseek", "stepfun"]
+    }
+
+    /// Display name for a provider ID
+    func providerName(for id: String) -> String {
+        if let p = status?.providers.first(where: { $0.providerId == id }) {
+            return p.providerName
+        }
+        return id == "deepseek" ? "DeepSeek" : "StepFun"
+    }
+
+    /// Whether a provider is enabled in settings
+    func isProviderEnabled(_ id: String) -> Bool {
+        // Default to enabled if not explicitly set
+        let key = "provider_enabled_\(id)"
+        return UserDefaults.standard.object(forKey: key) as? Bool ?? true
+    }
+
+    /// Enable or disable a provider
+    func setProviderEnabled(_ id: String, enabled: Bool) {
+        let key = "provider_enabled_\(id)"
+        UserDefaults.standard.set(enabled, forKey: key)
+        // Trigger UI refresh
+        objectWillChange.send()
+    }
+
+    /// Providers filtered by enabled state
+    var enabledProviders: [ProviderStatus] {
+        guard let s = status else { return [] }
+        return s.providers.filter { isProviderEnabled($0.providerId) }
     }
 
     // ── Helpers ───────────────────────────────────────

@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Main popover content: title + provider cards + refresh/settings buttons
+/// Main popover content: title + provider cards + refresh/options buttons
 struct PopoverContent: View {
     @ObservedObject var reader: StatusReader
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,12 +28,16 @@ struct PopoverContent: View {
                 .buttonStyle(.plain)
 
                 Menu {
+                    Button("Settings...") {
+                        openWindow(id: "settings")
+                    }
+                    Divider()
                     Button("Quit Codex Bar") {
                         NSApplication.shared.terminate(nil)
                     }
                 } label: {
-                    Text("⚙")
-                        .font(.system(size: 14))
+                    Text("⋮")
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -47,20 +52,20 @@ struct PopoverContent: View {
             .padding(.bottom, 8)
 
             // ── Provider cards (stacked) ──────────
-            if let status = reader.status, !status.providers.isEmpty {
+            let enabledProviders = reader.enabledProviders
+            if !enabledProviders.isEmpty {
                 let sel = reader.selectedProvider
-                ForEach(Array(status.providers.enumerated()), id: \.element.id) { index, provider in
+                ForEach(Array(enabledProviders.enumerated()), id: \.element.id) { index, provider in
                     if index > 0 {
-                        // Divider between providers
                         Rectangle()
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(red: 0.88, green: 0.88, blue: 0.88))  // #E0E0E0
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(red: 0.88, green: 0.88, blue: 0.88))
                             .frame(height: 1)
                             .padding(.vertical, 4)
                     }
                     ProviderCardView(
                         provider: provider,
                         isSelected: provider.providerId == sel,
-                        updatedAt: status.updatedAt,
+                        updatedAt: reader.status?.updatedAt,
                         onSelect: {
                             reader.writeSelectedProvider(provider.providerId)
                         },
@@ -81,20 +86,18 @@ struct PopoverContent: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(colorScheme == .dark
                       ? Color(red: 0.15, green: 0.15, blue: 0.15).opacity(0.95)
-                      : Color(red: 0.96, green: 0.96, blue: 0.96))  // #F5F5F5
+                      : Color(red: 0.96, green: 0.96, blue: 0.96))
         )
     }
 
     private func refresh() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // Run codex-bar-cli fetch
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/local/bin/codex-bar-cli")
             task.arguments = ["fetch"]
             try? task.run()
             task.waitUntilExit()
 
-            // Re-read after 2 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 reader.readStatus()
             }
