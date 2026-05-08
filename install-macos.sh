@@ -63,6 +63,11 @@ mkdir -p "$BUNDLE_RESOURCES"
 # Copy binary
 cp .build/release/CodexBar "$BUNDLE_MACOS/"
 
+# Copy icon
+if [ -f "$PROJECT_DIR/logo-output/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/logo-output/AppIcon.icns" "$BUNDLE_RESOURCES/AppIcon.icns"
+fi
+
 # Create Info.plist
 cat > "$BUNDLE_CONTENTS/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -73,6 +78,8 @@ cat > "$BUNDLE_CONTENTS/Info.plist" << 'PLIST'
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>CodexBar</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.codexbar.macos</string>
     <key>CFBundleName</key>
