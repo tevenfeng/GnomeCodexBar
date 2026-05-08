@@ -370,11 +370,16 @@ export default class CodexBarExtension extends Extension {
         // Title row
         box.add_child(new St.Label({ text: title, style: `font-size:14px; font-weight:600; color:${c.text};` }));
 
-        // Progress bar
+        // Progress bar — use set_width() for reliable ClutterActor sizing
         const barW = 250, barH = 8, fillW = Math.max(0, Math.round(pct / 100 * barW));
         let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
-        const bar = new St.Widget({ style_class: 'codex-bar-bar-bg', style: `width:${barW}px; height:${barH}px; margin:6px 0 4px 0;` });
-        bar.add_child(new St.Widget({ style: `width:${fillW}px; height:${barH}px;`, style_class: `codex-bar-bar-fill ${cl}` }));
+        const bar = new St.Widget({ style_class: 'codex-bar-bar-bg', style: `margin:6px 0 4px 0;` });
+        bar.set_width(barW);
+        bar.set_height(barH);
+        const fill = new St.Widget({ style_class: `codex-bar-bar-fill ${cl}` });
+        fill.set_width(fillW);
+        fill.set_height(barH);
+        bar.add_child(fill);
         box.add_child(bar);
 
         // Info row: "X% left" left + "Resets in X" right
