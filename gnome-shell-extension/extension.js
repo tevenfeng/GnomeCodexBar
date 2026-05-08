@@ -373,16 +373,14 @@ export default class CodexBarExtension extends Extension {
         // Progress bar — two-segment St.BoxLayout with CSS widths
         const barW = 250, barH = 8, fillW = Math.max(0, Math.round(pct / 100 * barW));
         let cl = 'high'; if (pct < 20) cl = 'low'; else if (pct < 50) cl = 'medium';
-        const barBox = new St.BoxLayout({ style: `width:${barW}px; height:${barH}px; margin:6px 0 4px 0; spacing:0;` });
+        const barBox = new St.BoxLayout({ style: `width:${barW}px; height:${barH}px; margin:6px 0 4px 0; spacing:0; border-radius:4px; overflow:hidden;` });
         const fillSeg = new St.Widget({ style_class: `codex-bar-bar-fill ${cl}` });
         fillSeg.set_style(`width:${fillW}px; height:${barH}px;`);
         const restSeg = new St.Widget({ style_class: 'codex-bar-bar-bg' });
         restSeg.set_style(`width:${barW - fillW}px; height:${barH}px;`);
         barBox.add_child(fillSeg);
         barBox.add_child(restSeg);
-        const clip = new St.Widget({ style: `width:${barW}px; height:${barH}px; border-radius:4px; overflow:hidden;` });
-        clip.add_child(barBox);
-        box.add_child(clip);
+        box.add_child(barBox);
 
         // Info row: "X% left" left + "Resets in X" right
         const infoRow = new St.BoxLayout({ x_expand: true });
