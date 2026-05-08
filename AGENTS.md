@@ -20,7 +20,7 @@ Rust CLI daemon
   └── StepFun:  3-step login → QueryStepPlanRateLimit + GetStepPlanStatus (Cookie 认证)
         │
         ▼
-  status.json  (~/.local/share/gnome-codex-bar/status.json)
+  status.json  (platform data dir / gnome-codex-bar/status.json)
         │
         ▼  (Gio.FileMonitor)
   GNOME Shell Extension
@@ -43,7 +43,7 @@ Rust CLI daemon
 | `src/main.rs` | CLI 入口，clap 子命令定义 |
 | `src/daemon.rs` | 守护进程循环 + `fetch_all()` 并行拉取所有 Provider |
 | `src/autostart.rs` | 开机自启动管理（Linux systemd / macOS launchd） |
-| `src/config.rs` | TOML 配置加载，`~/.config/codex-bar/config.toml` |
+| `src/config.rs` | TOML 配置加载（Linux: `~/.config/codex-bar/config.toml`，macOS: `~/Library/Application Support/codex-bar/config.toml`） |
 | `src/output.rs` | 写入 `status.json` + `selected_provider.json` |
 | `src/providers/mod.rs` | `Provider` trait + `ProviderStatus` / `StatusSnapshot` 类型定义 |
 | `src/providers/deepseek.rs` | DeepSeek Provider：API Key 认证 + 余额查询 |
@@ -156,6 +156,8 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 
 ## 文件路径
 
+### Linux (ZorinOS)
+
 | 路径 | 用途 |
 |------|------|
 | `~/.config/codex-bar/config.toml` | CLI 配置 |
@@ -163,8 +165,18 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 | `~/.local/share/gnome-codex-bar/selected_provider.json` | 当前选中的 Provider |
 | `~/.local/share/gnome-shell/extensions/codex-bar@gnome/` | 扩展安装目录 |
 | `~/.local/share/glib-2.0/schemas/` | GSettings schema |
-| `~/.config/systemd/user/codex-bar-cli.service` | systemd user service（Linux 自启动） |
-| `~/Library/LaunchAgents/com.codexbar.cli.plist` | launchd plist（macOS 自启动） |
+| `~/.config/systemd/user/codex-bar-cli.service` | systemd user service（自启动） |
+
+### macOS
+
+| 路径 | 用途 |
+|------|------|
+| `~/Library/Application Support/codex-bar/config.toml` | CLI 配置 |
+| `~/Library/Application Support/gnome-codex-bar/status.json` | 用量数据（CLI 写 → Swift App 读） |
+| `~/Library/Application Support/gnome-codex-bar/selected_provider.json` | 当前选中的 Provider |
+| `~/Library/LaunchAgents/com.codexbar.cli.plist` | launchd plist（自启动） |
+
+> 注：CLI 使用 `dirs` crate 的 `config_dir()` 和 `data_local_dir()`，不同平台路径不同。
 
 ## 构建与开发
 
@@ -225,7 +237,7 @@ codex-bar-cli autostart status
 - `enable`：写入 plist → `launchctl load`
 - `disable`：`launchctl unload` → 删除 plist
 - `KeepAlive = true`：进程退出后自动重启
-- 日志输出到 `~/.local/share/gnome-codex-bar/logs/daemon.log` 和 `daemon.err`
+- 日志输出到 `~/Library/Application Support/gnome-codex-bar/logs/daemon.log` 和 `daemon.err`
 
 ## 单元测试
 

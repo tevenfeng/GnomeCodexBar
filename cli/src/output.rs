@@ -5,7 +5,9 @@ use crate::{
     providers::StatusSnapshot,
 };
 
-/// Write status snapshot to ~/.local/share/gnome-codex-bar/status.json
+/// Write status snapshot to status.json in the platform-specific data directory
+/// Linux: ~/.local/share/gnome-codex-bar/status.json
+/// macOS: ~/Library/Application Support/gnome-codex-bar/status.json
 pub fn write_status(snapshot: &StatusSnapshot) -> anyhow::Result<()> {
     let dir = status_dir();
     fs::create_dir_all(&dir)?;

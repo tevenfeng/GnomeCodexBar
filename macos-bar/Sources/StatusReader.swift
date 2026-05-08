@@ -15,8 +15,10 @@ class StatusReader: ObservableObject {
     private let selectedPath: URL
 
     init() {
+        // Use the same directory as the Rust CLI (dirs::data_local_dir())
+        // On macOS this is ~/Library/Application Support/gnome-codex-bar/
         let dataDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/gnome-codex-bar")
+            .appendingPathComponent("Library/Application Support/gnome-codex-bar")
         self.statusPath = dataDir.appendingPathComponent("status.json")
         self.selectedPath = dataDir.appendingPathComponent("selected_provider.json")
 
