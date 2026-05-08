@@ -43,7 +43,7 @@ Rust CLI daemon
 | `src/main.rs` | CLI 入口，clap 子命令定义 |
 | `src/daemon.rs` | 守护进程循环 + `fetch_all()` 并行拉取所有 Provider |
 | `src/autostart.rs` | 开机自启动管理（Linux systemd / macOS launchd） |
-| `src/config.rs` | TOML 配置加载（Linux: `~/.config/codex-bar/config.toml`，macOS: `~/Library/Application Support/codex-bar/config.toml`） |
+| `src/config.rs` | TOML 配置加载（与 status.json 同目录，自动从旧路径迁移） |
 | `src/output.rs` | 写入 `status.json` + `selected_provider.json` |
 | `src/providers/mod.rs` | `Provider` trait + `ProviderStatus` / `StatusSnapshot` 类型定义 |
 | `src/providers/deepseek.rs` | DeepSeek Provider：API Key 认证 + 余额查询 |
@@ -160,7 +160,7 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 
 | 路径 | 用途 |
 |------|------|
-| `~/.config/codex-bar/config.toml` | CLI 配置 |
+| `~/.local/share/gnome-codex-bar/config.toml` | CLI 配置 |
 | `~/.local/share/gnome-codex-bar/status.json` | 用量数据（CLI 写 → 扩展读） |
 | `~/.local/share/gnome-codex-bar/selected_provider.json` | 当前选中的 Provider |
 | `~/.local/share/gnome-shell/extensions/codex-bar@gnome/` | 扩展安装目录 |
@@ -171,12 +171,12 @@ StepFun API 返回的 JSON 字段类型不稳定（有时 int 有时 float/strin
 
 | 路径 | 用途 |
 |------|------|
-| `~/Library/Application Support/codex-bar/config.toml` | CLI 配置 |
+| `~/Library/Application Support/gnome-codex-bar/config.toml` | CLI 配置 |
 | `~/Library/Application Support/gnome-codex-bar/status.json` | 用量数据（CLI 写 → Swift App 读） |
 | `~/Library/Application Support/gnome-codex-bar/selected_provider.json` | 当前选中的 Provider |
 | `~/Library/LaunchAgents/com.codexbar.cli.plist` | launchd plist（自启动） |
 
-> 注：CLI 使用 `dirs` crate 的 `config_dir()` 和 `data_local_dir()`，不同平台路径不同。
+> 注：配置和数据统一使用 `dirs::data_local_dir()` 下的 `gnome-codex-bar/` 目录。首次加载时自动从旧路径 `dirs::config_dir()/codex-bar/` 迁移 config.toml。
 
 ## 构建与开发
 

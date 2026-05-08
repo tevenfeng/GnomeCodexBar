@@ -82,10 +82,33 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load config from ~/.config/codex-bar/config.toml.
+    /// Load config from the data directory (same dir as status.json).
     /// Creates with defaults if file doesn't exist.
+    /// Migrates from the old config directory if the old file exists but the new one doesn't.
     pub fn load() -> anyhow::Result<Self> {
         let path = config_path();
+
+        // Migrate from old config location if needed
+        if !path.exists() {
+            let old_path = dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("codex-bar")
+                .join("config.toml");
+            if old_path.exists() {
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _: Result<(), std::io::Error> = fs::rename(&old_path, &path)
+                    .or_else(|_| {
+                        // Fall back to copy+delete if cross-device
+                        let content = fs::read_to_string(&old_path)?;
+                        fs::write(&path, &content)?;
+                        let _ = fs::remove_file(&old_path);
+                        Ok(())
+                    });
+            }
+        }
+
         if path.exists() {
             let content = fs::read_to_string(&path)?;
             let config: Config = toml::from_str(&content)?;
@@ -130,10 +153,7 @@ impl Config {
 }
 
 fn config_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("codex-bar")
-        .join("config.toml")
+    status_dir().join("config.toml")
 }
 
 pub fn status_dir() -> PathBuf {
