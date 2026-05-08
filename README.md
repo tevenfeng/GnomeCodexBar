@@ -1,15 +1,16 @@
 # GnomeCodexBar
 
-GNOME Shell 顶栏扩展 + Rust CLI 后端，用于实时监控 DeepSeek 和 StepFun 的编程套餐用量。
+跨平台顶栏工具 + Rust CLI 后端，用于实时监控 DeepSeek 和 StepFun 的编程套餐用量。
 
 ## 功能
 
-- **顶栏实时显示**：在 GNOME 顶栏显示当前用量（DeepSeek 显示余额，StepFun 显示剩余百分比）
+- **顶栏实时显示**：在顶栏显示当前用量（DeepSeek 显示余额，StepFun 显示剩余百分比）
 - **弹出详情窗口**：点击顶栏控件查看详细信息，包括套餐名称、5h/周用量、重置时间、进度条等
 - **多 Provider 切换**：在 DeepSeek 和 StepFun 之间一键切换顶栏显示
-- **自动刷新**：CLI daemon 定时拉取最新数据，扩展通过文件监听实时更新
+- **自动刷新**：CLI daemon 定时拉取最新数据，前端通过文件监听实时更新
 - **DeepSeek**：显示账户余额（支持 CNY/USD）
 - **StepFun**：显示套餐名称（Plus/Mini 等）、5h 窗口和周窗口剩余百分比、重置倒计时
+- **跨平台**：Linux (GNOME Shell Extension) + macOS (SwiftUI Menu Bar App)
 
 ## 架构
 
@@ -20,14 +21,15 @@ GNOME Shell 顶栏扩展 + Rust CLI 后端，用于实时监控 DeepSeek 和 Ste
 └─────────────────────┘        │  gnome-codex-bar/    │
                                └──────────────────────┘
                                         │
-                                        ▼
-                               ┌──────────────────────┐
-                               │  GNOME Shell 扩展     │
-                               │  (读取并展示数据)      │
-                               └──────────────────────┘
+                          ┌─────────────┴─────────────┐
+                          ▼                           ▼
+                 ┌──────────────────┐       ┌──────────────────┐
+                 │ GNOME Shell 扩展  │       │ macOS Menu Bar   │
+                 │ (Gio.FileMonitor)│       │ (DispatchSource) │
+                 └──────────────────┘       └──────────────────┘
 ```
 
-数据流：Rust CLI → `status.json` → GNOME 扩展通过 `Gio.FileMonitor` 监听文件变化自动刷新 UI。
+数据流：Rust CLI → `status.json` → 前端通过文件监听自动刷新 UI。
 
 ## 安装
 
@@ -59,11 +61,14 @@ GNOME Shell 顶栏扩展 + Rust CLI 后端，用于实时监控 DeepSeek 和 Ste
 
 安装脚本会：
 1. 编译 Rust CLI 并安装到 `/usr/local/bin/`
-2. 验证安装结果
+2. 编译 SwiftUI 菜单栏应用并安装到 `~/Applications/CodexBar.app`
+3. 验证安装结果
 
-> macOS 不支持 GNOME Shell Extension，仅安装 CLI 守护进程。
+> macOS 使用原生 SwiftUI Menu Bar App，通过 `DispatchSource` 监听 `status.json` 变化自动刷新。
 
 ### 手动安装
+
+**Linux：**
 
 ```bash
 # 编译 CLI
@@ -75,6 +80,18 @@ cp -r gnome-shell-extension/* ~/.local/share/gnome-shell/extensions/codex-bar@gn
 
 # 编译 schema
 glib-compile-schemas ~/.local/share/glib-2.0/schemas/
+```
+
+**macOS：**
+
+```bash
+# 编译 CLI
+cd cli && cargo build --release
+cp target/release/codex-bar-cli /usr/local/bin/
+
+# 编译并安装菜单栏应用
+cd ../macos-bar && swift build -c release
+# 安装到 ~/Applications/CodexBar.app（参考 install-macos.sh）
 ```
 
 ## 配置
@@ -256,7 +273,7 @@ GnomeCodexBar/
 │           ├── providers_deepseek.rs
 │           ├── providers_stepfun.rs
 │           └── autostart.rs
-├── gnome-shell-extension/        # GNOME Shell 扩展前端
+├── gnome-shell-extension/        # GNOME Shell 扩展前端 (Linux)
 │   ├── extension.js              # 主扩展（顶栏按钮 + 弹出窗口）
 │   ├── popupMenu.js              # PopupMenu 版弹出窗口
 │   ├── panelButton.js            # 顶栏按钮渲染
@@ -265,6 +282,15 @@ GnomeCodexBar/
 │   ├── prefs.js                  # 偏好设置
 │   ├── metadata.json             # 扩展元数据
 │   └── schemas/                  # GSettings schema
+├── macos-bar/                    # macOS 菜单栏应用前端
+│   ├── Package.swift             # Swift Package Manager 配置
+│   └── Sources/
+│       ├── CodexBarApp.swift     # @main 入口 + MenuBarExtra
+│       ├── StatusReader.swift    # 读取 status.json + 文件监听
+│       ├── Models.swift          # 数据模型 (StatusSnapshot/ProviderStatus)
+│       ├── PopoverContent.swift  # 弹出窗口内容
+│       ├── ProviderCardView.swift # Provider 卡片视图
+│       └── BarSection.swift      # 进度条区域
 ├── install-linux.sh               # Linux 一键安装脚本
 ├── install-macos.sh               # macOS 一键安装脚本
 └── test.sh                       # 一键测试脚本

@@ -4,10 +4,11 @@
 
 ## 项目概述
 
-GnomeCodexBar 是一个 **Rust CLI 后端 + GNOME Shell 扩展前端** 的双进程架构项目，用于在 GNOME 顶栏实时监控 DeepSeek 和 StepFun 的编程套餐用量。
+GnomeCodexBar 是一个 **Rust CLI 后端 + 平台原生前端** 的双进程架构项目，用于在顶栏实时监控 DeepSeek 和 StepFun 的编程套餐用量。
 
 - **后端（Rust CLI）**：定时拉取 API 数据，写入 `status.json`
-- **前端（GNOME Shell Extension）**：通过 `Gio.FileMonitor` 监听 `status.json` 变化，渲染顶栏控件和弹出详情窗口
+- **Linux 前端（GNOME Shell Extension）**：通过 `Gio.FileMonitor` 监听 `status.json` 变化，渲染顶栏控件和弹出详情窗口
+- **macOS 前端（SwiftUI Menu Bar App）**：通过 `DispatchSource` 监听 `status.json` 变化，渲染菜单栏指示器和弹出详情窗口
 
 两者通过文件系统解耦，无直接通信。
 
@@ -25,6 +26,12 @@ Rust CLI daemon
   GNOME Shell Extension
   ├── 顶栏按钮 (panelButton.js / extension.js)
   └── 弹出详情窗口 (extension.js / popupMenu.js)
+
+        │
+        ▼  (DispatchSource)
+  macOS Menu Bar App (SwiftUI)
+  ├── 菜单栏指示器 (MenuBarExtra)
+  └── 弹出详情窗口 (PopoverContent)
 ```
 
 ## 关键文件
@@ -51,6 +58,17 @@ Rust CLI daemon
 | `panelButton.js` | 基于 `PanelMenu.Button` 的备选顶栏按钮（未启用） |
 | `statusReader.js` | 读取 `status.json` + `selected_provider.json` + 文件监听 |
 | `stylesheet.css` | 所有样式定义 |
+
+### macOS 菜单栏应用 (`macos-bar/`)
+
+| 文件 | 职责 |
+|------|------|
+| `Sources/CodexBarApp.swift` | @main 入口，MenuBarExtra(.window) 菜单栏指示器 |
+| `Sources/StatusReader.swift` | 读取 `status.json` + `selected_provider.json` + 文件监听 (DispatchSource) |
+| `Sources/Models.swift` | StatusSnapshot / ProviderStatus / JSONValue 数据模型 |
+| `Sources/PopoverContent.swift` | 弹出窗口内容：标题行 + Provider 卡片列表 + 刷新按钮 |
+| `Sources/ProviderCardView.swift` | 单个 Provider 卡片：头部 + 进度条 + 详情 |
+| `Sources/BarSection.swift` | 进度条区域：标题 + 条 + 信息行 |
 
 ## 核心约定
 

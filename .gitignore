@@ -1,6 +1,9 @@
 # Rust
 cli/target/
 
+# Swift
+macos-bar/.build/
+
 # IDE
 .idea/
 .vscode/
