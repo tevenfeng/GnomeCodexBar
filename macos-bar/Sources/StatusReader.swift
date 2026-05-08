@@ -105,12 +105,19 @@ class StatusReader: ObservableObject {
 
     // ── Helpers ───────────────────────────────────────
 
+    /// Parse ISO8601 date string, with or without fractional seconds
+    private func parseISO8601(_ ts: String) -> Date? {
+        let f1 = ISO8601DateFormatter()
+        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f1.date(from: ts) { return d }
+        let f2 = ISO8601DateFormatter()
+        f2.formatOptions = [.withInternetDateTime]
+        return f2.date(from: ts)
+    }
+
     /// Format a relative time string for "Updated X ago"
     func ago(_ ts: String?) -> String {
-        guard let ts else { return "just now" }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: ts) else { return "just now" }
+        guard let ts, let date = parseISO8601(ts) else { return "just now" }
         let diff = Date().timeIntervalSince(date)
         if diff < 60 { return "just now" }
         let m = Int(diff / 60)
@@ -122,10 +129,7 @@ class StatusReader: ObservableObject {
 
     /// Format a relative time string for "Resets in X"
     func resetIn(_ ts: String?) -> String? {
-        guard let ts else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: ts) else { return nil }
+        guard let ts, let date = parseISO8601(ts) else { return nil }
         let d = date.timeIntervalSinceNow
         if d < 0 { return "now" }
         let h = Int(d / 3600), m = Int((d.truncatingRemainder(dividingBy: 3600)) / 60)
