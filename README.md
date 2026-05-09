@@ -3,11 +3,11 @@
   
   # GnomeCodexBar
   
-  跨平台顶栏工具，实时监控 DeepSeek 和 StepFun 编程套餐用量
+  跨平台顶栏工具，实时监控 DeepSeek、StepFun 和 OpenCode Go 编程套餐用量
   
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-blue" alt="Platform">
   <img src="https://img.shields.io/badge/backend-Rust-orange" alt="Backend">
-  <img src="https://img.shields.io/badge/tests-55%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-63%20passed-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   
   ---
@@ -18,12 +18,13 @@
 
 ## 功能
 
-- **顶栏实时显示**：在顶栏显示当前用量（DeepSeek 显示余额，StepFun 显示剩余百分比）
-- **弹出详情窗口**：点击顶栏控件查看详细信息，包括套餐名称、5h/周用量、重置时间、进度条等
-- **多 Provider 切换**：在 DeepSeek 和 StepFun 之间一键切换顶栏显示
+- **顶栏实时显示**：在顶栏显示当前用量（DeepSeek 显示余额，StepFun/OpenCode Go 显示剩余百分比）
+- **弹出详情窗口**：点击顶栏控件查看详细信息，包括套餐名称、5h/周/月用量、重置时间、进度条等
+- **多 Provider 切换**：在 DeepSeek、StepFun 和 OpenCode Go 之间一键切换顶栏显示
 - **自动刷新**：CLI daemon 定时拉取最新数据，前端通过文件监听实时更新
 - **DeepSeek**：显示账户余额（支持 CNY/USD）
 - **StepFun**：显示套餐名称（Plus/Mini 等）、5h 窗口和周窗口剩余百分比、重置倒计时
+- **OpenCode Go**：通过 Cookie Header + workspace id 获取 5h、周、月窗口剩余百分比和重置倒计时
 - **跨平台**：Linux (GNOME Shell Extension) + macOS (SwiftUI Menu Bar App)
 
 ## 架构
@@ -74,7 +75,7 @@
 ```
 
 安装脚本会：
-1. 编译 Rust CLI 并安装到 `/usr/local/bin/`
+1. 编译 Rust CLI 并安装到 `~/.local/bin/`
 2. 编译 SwiftUI 菜单栏应用并安装到 `~/Applications/CodexBar.app`
 3. 验证安装结果
 
@@ -101,7 +102,8 @@ glib-compile-schemas ~/.local/share/glib-2.0/schemas/
 ```bash
 # 编译 CLI
 cd cli && cargo build --release
-cp target/release/codex-bar-cli /usr/local/bin/
+mkdir -p ~/.local/bin
+cp target/release/codex-bar-cli ~/.local/bin/
 
 # 编译并安装菜单栏应用
 cd ../macos-bar && swift build -c release
@@ -110,7 +112,10 @@ cd ../macos-bar && swift build -c release
 
 ## 配置
 
-配置文件位于 `~/.config/codex-bar/config.toml`，也可通过 CLI 命令配置：
+配置文件位于平台数据目录下的 `gnome-codex-bar/config.toml`，也可通过 CLI 命令配置：
+
+- Linux：`~/.local/share/gnome-codex-bar/config.toml`
+- macOS：`~/Library/Application Support/gnome-codex-bar/config.toml`
 
 ### DeepSeek
 
@@ -124,11 +129,28 @@ codex-bar-cli config deepseek --api-key <YOUR_API_KEY>
 codex-bar-cli config stepfun --username <EMAIL> --password <PASSWORD>
 ```
 
+### OpenCode Go
+
+```bash
+codex-bar-cli config opencodego --enabled true --cookie-header '<COOKIE_HEADER>' --workspace-id 'wrk_...'
+```
+
+也可以通过环境变量提供敏感信息，避免把 Cookie 写入配置文件：
+
+```bash
+export CODEXBAR_OPENCODEGO_COOKIE_HEADER='<COOKIE_HEADER>'
+export CODEXBAR_OPENCODEGO_WORKSPACE_ID='wrk_...'
+codex-bar-cli config opencodego --enabled true
+```
+
+> `cookie_header` 是浏览器会话凭据，请勿提交到版本控制或公开日志中。
+
 ### 启用/禁用 Provider
 
 ```bash
 codex-bar-cli config deepseek --enabled false
 codex-bar-cli config stepfun --enabled true
+codex-bar-cli config opencodego --enabled true
 ```
 
 ### 示例 config.toml
@@ -142,6 +164,11 @@ api_key = "sk-xxx"
 enabled = true
 username = "user@example.com"
 password = "your-password"
+
+[providers.opencodego]
+enabled = true
+cookie_header = "session=xxx; other=yyy"
+workspace_id = "wrk_xxx"
 
 [general]
 refresh_interval_secs = 300
@@ -162,6 +189,7 @@ codex-bar-cli status
 
 # 切换顶栏显示的 Provider
 codex-bar-cli select stepfun
+codex-bar-cli select opencodego
 
 # 设置月度预算
 codex-bar-cli budget 100
@@ -239,14 +267,16 @@ cli/
 │   └── providers/
 │       ├── mod.rs                  # #[cfg(test)] #[path = "../../tests/unit/providers_mod.rs"] mod tests;
 │       ├── deepseek.rs             # #[cfg(test)] #[path = "../../tests/unit/providers_deepseek.rs"] mod tests;
-│       └── stepfun.rs              # #[cfg(test)] #[path = "../../tests/unit/providers_stepfun.rs"] mod tests;
+│       ├── stepfun.rs              # #[cfg(test)] #[path = "../../tests/unit/providers_stepfun.rs"] mod tests;
+│       └── opencodego.rs           # #[cfg(test)] #[path = "../../tests/unit/providers_opencodego.rs"] mod tests;
 └── tests/
     └── unit/                       # 所有测试文件（unit/ 子目录避免 Cargo 集成测试冲突）
         ├── config.rs
         ├── output.rs
         ├── providers_mod.rs
         ├── providers_deepseek.rs
-        └── providers_stepfun.rs
+        ├── providers_stepfun.rs
+        └── providers_opencodego.rs
 ```
 
 这种方式的优点：测试代码集中管理、源文件保持简洁、测试仍可访问私有类型（无需改为 `pub`）。
@@ -255,14 +285,15 @@ cli/
 
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|---------|
-| `config.rs` | 6 | 配置默认值、TOML 序列化/反序列化、Provider 配置映射 |
+| `config.rs` | 7 | 配置默认值、TOML 序列化/反序列化、Provider 配置映射 |
 | `output.rs` | 4 | StatusSnapshot 序列化、selected_provider 读写 |
 | `providers/mod.rs` | 6 | ProviderStatus/StatusSnapshot 序列化、error 字段 |
 | `providers/deepseek.rs` | 6 | Balance API 响应解析、余额逻辑、Provider id/name |
 | `providers/stepfun.rs` | 25 | 灵活类型反序列化、parse_timestamp、build_status、extract_set_cookie |
+| `providers/opencodego.rs` | 7 | workspace id 归一化、Cookie 处理、用量解析、Monthly、status 契约 |
 | `autostart.rs` | 8 | 平台检测、systemd/launchd 路径、service/plist 内容生成 |
 
-共 55 个单元测试，覆盖所有纯逻辑函数（网络请求需 mock，暂未覆盖）。
+共 63 个单元测试，覆盖所有纯逻辑函数（网络请求需 mock，暂未覆盖）。
 
 ## 项目结构
 
@@ -278,7 +309,8 @@ GnomeCodexBar/
 │   │   └── providers/
 │   │       ├── mod.rs            # Provider trait & 共享类型
 │   │       ├── deepseek.rs       # DeepSeek 余额 API
-│   │       └── stepfun.rs        # StepFun 登录 + 用量 + 套餐 API
+│   │       ├── stepfun.rs        # StepFun 登录 + 用量 + 套餐 API
+│   │       └── opencodego.rs     # OpenCode Go Cookie + workspace 用量
 │   └── tests/
 │       └── unit/                 # 单元测试（与 src/ 同级）
 │           ├── config.rs
@@ -286,6 +318,7 @@ GnomeCodexBar/
 │           ├── providers_mod.rs
 │           ├── providers_deepseek.rs
 │           ├── providers_stepfun.rs
+│           ├── providers_opencodego.rs
 │           └── autostart.rs
 ├── gnome-shell-extension/        # GNOME Shell 扩展前端 (Linux)
 │   ├── extension.js              # 主扩展（顶栏按钮 + 弹出窗口）

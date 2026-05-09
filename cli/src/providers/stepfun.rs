@@ -32,7 +32,10 @@ impl StepFunProvider {
 
 fn base_headers() -> reqwest::header::HeaderMap {
     let mut h = reqwest::header::HeaderMap::new();
-    h.insert(reqwest::header::CONTENT_TYPE, "application/json".parse().unwrap());
+    h.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
     h.insert(
         reqwest::header::HeaderName::from_static("oasis-appid"),
         APP_ID.parse().unwrap(),
@@ -248,10 +251,7 @@ async fn full_login(
     let reg_resp = client
         .post(REGISTER_URL)
         .headers(base_headers())
-        .header(
-            "Cookie",
-            format!("INGRESSCOOKIE={}", ingress_cookie),
-        )
+        .header("Cookie", format!("INGRESSCOOKIE={}", ingress_cookie))
         .body("{}")
         .send()
         .await?;
@@ -309,10 +309,7 @@ async fn full_login(
 }
 
 /// Query plan status (subscription name) with Oasis-Token.
-async fn query_plan_status(
-    client: &reqwest::Client,
-    token: &str,
-) -> Option<String> {
+async fn query_plan_status(client: &reqwest::Client, token: &str) -> Option<String> {
     let cookie = format!("Oasis-Token={}; Oasis-Webid={}", token, WEB_ID);
 
     let resp = client
@@ -343,7 +340,10 @@ async fn query_plan_status(
             };
 
             if plan.status != Some(1) {
-                log::debug!("Plan status API returned non-success status: {:?}", plan.status);
+                log::debug!(
+                    "Plan status API returned non-success status: {:?}",
+                    plan.status
+                );
                 return None;
             }
 
@@ -421,7 +421,10 @@ impl Provider for StepFunProvider {
         if data.status != Some(1) {
             let msg = data.message.unwrap_or_else(|| "Unknown error".into());
             // If auth error, re-login and retry once
-            if msg.contains("unauthenticated") || msg.contains("embuzzled") || msg.contains("embezzled") {
+            if msg.contains("unauthenticated")
+                || msg.contains("embuzzled")
+                || msg.contains("embezzled")
+            {
                 log::warn!("Token invalid, re-logging in...");
                 let ingress = get_ingress_cookie(&client).await?;
                 let token = full_login(&client, username, password, &ingress).await?;
@@ -454,7 +457,10 @@ impl Provider for StepFunProvider {
     }
 }
 
-fn build_status(data: &RateLimitResponse, plan_name: Option<&str>) -> Result<ProviderStatus, anyhow::Error> {
+fn build_status(
+    data: &RateLimitResponse,
+    plan_name: Option<&str>,
+) -> Result<ProviderStatus, anyhow::Error> {
     let five_hour_left = data
         .five_hour_usage_left_rate
         .as_ref()
@@ -483,13 +489,19 @@ fn build_status(data: &RateLimitResponse, plan_name: Option<&str>) -> Result<Pro
     let remaining_percent = (five_hour_left * 100.0).clamp(0.0, 100.0);
 
     let mut details = HashMap::new();
-    details.insert("five_hour_usage_left_rate".into(), Value::from(five_hour_left));
+    details.insert(
+        "five_hour_usage_left_rate".into(),
+        Value::from(five_hour_left),
+    );
     details.insert("weekly_usage_left_rate".into(), Value::from(weekly_left));
     details.insert(
         "five_hour_usage_reset_time".into(),
         Value::String(five_hour_reset),
     );
-    details.insert("weekly_usage_reset_time".into(), Value::String(weekly_reset));
+    details.insert(
+        "weekly_usage_reset_time".into(),
+        Value::String(weekly_reset),
+    );
     if let Some(name) = plan_name {
         details.insert("plan_name".into(), Value::String(name.to_string()));
     }

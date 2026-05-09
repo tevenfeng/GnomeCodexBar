@@ -54,8 +54,7 @@ fn test_flexible_timestamp_from_int() {
 
 #[test]
 fn test_flexible_timestamp_from_string() {
-    let w: FlexibleTimestampWrapper =
-        serde_json::from_str(r#"{"value": "1777528800"}"#).unwrap();
+    let w: FlexibleTimestampWrapper = serde_json::from_str(r#"{"value": "1777528800"}"#).unwrap();
     assert_eq!(w.value.value, 1777528800);
 }
 
@@ -139,7 +138,11 @@ fn test_build_status_full() {
         &Value::String("Plus".into())
     );
     assert!(
-        (status.details["five_hour_usage_left_rate"].as_f64().unwrap() - 0.85).abs()
+        (status.details["five_hour_usage_left_rate"]
+            .as_f64()
+            .unwrap()
+            - 0.85)
+            .abs()
             < f64::EPSILON
     );
     assert!(
@@ -287,12 +290,8 @@ fn test_rate_limit_response_deserialize() {
 
     assert_eq!(resp.status, Some(1));
     assert_eq!(resp.message, Some("ok".to_string()));
-    assert!(
-        (resp.five_hour_usage_left_rate.unwrap().value - 0.85).abs() < f64::EPSILON
-    );
-    assert!(
-        (resp.weekly_usage_left_rate.unwrap().value - 0.92).abs() < f64::EPSILON
-    );
+    assert!((resp.five_hour_usage_left_rate.unwrap().value - 0.85).abs() < f64::EPSILON);
+    assert!((resp.weekly_usage_left_rate.unwrap().value - 0.92).abs() < f64::EPSILON);
     assert_eq!(resp.five_hour_usage_reset_time.unwrap().value, 1777528800);
     assert_eq!(resp.weekly_usage_reset_time.unwrap().value, 1778049600);
 }

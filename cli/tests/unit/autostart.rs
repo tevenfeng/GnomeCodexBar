@@ -74,7 +74,11 @@ fn test_systemd_unit_uses_absolute_path() {
     for line in content.lines() {
         if line.contains("ExecStart=") {
             let path = line.split('=').nth(1).unwrap();
-            assert!(path.starts_with('/'), "ExecStart path should be absolute: {}", path);
+            assert!(
+                path.starts_with('/'),
+                "ExecStart path should be absolute: {}",
+                path
+            );
         }
     }
 }

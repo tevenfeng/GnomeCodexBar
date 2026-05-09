@@ -6,7 +6,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as StatusReader from './statusReader.js';
 
-const P = { deepseek: 'DeepSeek', stepfun: 'StepFun' };
+const P = { deepseek: 'DeepSeek', stepfun: 'StepFun', opencodego: 'OpenCode Go' };
 
 // Theme-aware color palette
 const C = {
@@ -172,6 +172,13 @@ export default class CodexBarExtension extends Extension {
         return c.ok;
     }
 
+    _shortLabel(pid) {
+        if (pid === 'deepseek') return 'DS';
+        if (pid === 'stepfun') return 'SF';
+        if (pid === 'opencodego') return 'OCG';
+        return (pid || '--').slice(0, 3).toUpperCase();
+    }
+
     /** Format a relative time string for "Updated X前" */
     _ago(ts) {
         if (!ts) return 'just now';
@@ -210,9 +217,10 @@ export default class CodexBarExtension extends Extension {
 
     _showBtn(pr, sel) {
         const c = this._c();
-        this._sn.text = sel === 'deepseek' ? 'DS' : 'SF';
+        const pid = pr?.provider_id || sel;
+        this._sn.text = this._shortLabel(pid);
         if (pr.error) { this._ic.style=`font-size:10px; margin-right:4px; color:${c.err};`; this._lb.text='ERR'; return; }
-        if (sel === 'deepseek') {
+        if (pid === 'deepseek') {
             const d=pr.details||{}, t=+d.total_balance||0, cu=d.currency==='USD'?'$':'\u00A5';
             let tx=`${cu}${t.toFixed(2)}`; if(tx.length>10) tx=`${cu}${Math.round(t)}`;
             this._ic.style=`font-size:10px; margin-right:4px; color:${c.accent};`; this._lb.text=tx;
@@ -299,8 +307,8 @@ export default class CodexBarExtension extends Extension {
         // Row 1: Name + Plan tag
         const nameRow = new St.BoxLayout({ x_expand: true });
         nameRow.add_child(new St.Label({ text: nm, x_expand: true, style: is ? `font-size:16px; font-weight:600; color:${c.accent};` : `font-size:16px; font-weight:600; color:${c.sub};` }));
-        // Plan tag (StepFun only)
-        if (pid === 'stepfun' && d.plan_name) {
+        // Optional plan tag for quota-style providers
+        if (d.plan_name) {
             nameRow.add_child(new St.Label({ text: d.plan_name, style: `font-size:12px; color:${c.muted};` }));
         }
         hdrContent.add_child(nameRow);
@@ -351,7 +359,7 @@ export default class CodexBarExtension extends Extension {
                 style: `font-size:11px; color:${c.muted}; margin-top:4px;`
             }));
         } else {
-            // StepFun: 5h Window + Weekly Window
+            // Quota providers: 5h Window + Weekly Window + optional Monthly Window
             if (d.five_hour_usage_left_rate != null) {
                 const pct = Math.round(d.five_hour_usage_left_rate * 100);
                 this._addBar(sec, '5h Window', pct, d.five_hour_usage_reset_time);
@@ -359,6 +367,10 @@ export default class CodexBarExtension extends Extension {
             if (d.weekly_usage_left_rate != null) {
                 const pct = Math.round(d.weekly_usage_left_rate * 100);
                 this._addBar(sec, 'Weekly Window', pct, d.weekly_usage_reset_time);
+            }
+            if (d.monthly_usage_left_rate != null) {
+                const pct = Math.round(d.monthly_usage_left_rate * 100);
+                this._addBar(sec, 'Monthly Window', pct, d.monthly_usage_reset_time);
             }
         }
     }

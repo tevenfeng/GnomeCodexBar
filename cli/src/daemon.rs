@@ -5,7 +5,10 @@ use chrono::Utc;
 use crate::{
     config::Config,
     output,
-    providers::{deepseek::DeepSeekProvider, stepfun::StepFunProvider, Provider, ProviderStatus, StatusSnapshot},
+    providers::{
+        deepseek::DeepSeekProvider, opencodego::OpenCodeGoProvider, stepfun::StepFunProvider,
+        Provider, StatusSnapshot,
+    },
 };
 
 pub async fn run_daemon() -> anyhow::Result<()> {
@@ -16,10 +19,7 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         // take effect without restarting the daemon.
         let config = Config::load()?;
         let interval_secs = config.general.refresh_interval_secs;
-        log::info!(
-            "Refresh cycle started, interval: {}s",
-            interval_secs
-        );
+        log::info!("Refresh cycle started, interval: {}s", interval_secs);
 
         let result = fetch_all(&config).await;
         match result {
@@ -60,19 +60,44 @@ async fn sleep_until_next_cycle(initial_interval_secs: u64) {
 pub async fn fetch_all(config: &Config) -> anyhow::Result<StatusSnapshot> {
     let deepseek = DeepSeekProvider::new();
     let stepfun = StepFunProvider::new();
+    let opencodego = OpenCodeGoProvider::new();
 
     let ds_config = config.deepseek_config();
     let sf_config = config.stepfun_config();
+    let og_config = config.opencodego_config();
 
-    let (ds_result, sf_result) = tokio::join!(
-        fetch_provider(&deepseek, &ds_config),
-        fetch_provider(&stepfun, &sf_config),
-    );
+    let ds_fetch = async {
+        if ds_config.enabled {
+            Some(fetch_provider(&deepseek, &ds_config).await)
+        } else {
+            None
+        }
+    };
+    let sf_fetch = async {
+        if sf_config.enabled {
+            Some(fetch_provider(&stepfun, &sf_config).await)
+        } else {
+            None
+        }
+    };
+    let og_fetch = async {
+        if og_config.enabled {
+            Some(fetch_provider(&opencodego, &og_config).await)
+        } else {
+            None
+        }
+    };
+
+    let (ds_result, sf_result, og_result) = tokio::join!(ds_fetch, sf_fetch, og_fetch);
 
     let mut providers = Vec::new();
-    for result in [ds_result, sf_result] {
-        match result {
-            Ok(status) => providers.push(status),
+    for result in [ds_result, sf_result, og_result] {
+        match result.transpose() {
+            Ok(Some(status)) => providers.push(status),
+            Ok(None) => {}
+            Err(e) if e.to_string().starts_with("Provider disabled:") => {
+                log::debug!("Provider skipped: {}", e);
+            }
             Err(e) => {
                 log::error!("Provider fetch error: {}", e);
             }
@@ -88,17 +113,6 @@ pub async fn fetch_all(config: &Config) -> anyhow::Result<StatusSnapshot> {
 async fn fetch_provider(
     provider: &dyn Provider,
     config: &crate::providers::ProviderConfig,
-) -> anyhow::Result<ProviderStatus> {
-    if !config.enabled {
-        return Ok(ProviderStatus {
-            provider_id: provider.id().into(),
-            provider_name: provider.name().into(),
-            available: false,
-            remaining_percent: 0.0,
-            details: std::collections::HashMap::new(),
-            error: Some("Provider disabled".into()),
-        });
-    }
-
+) -> anyhow::Result<crate::providers::ProviderStatus> {
     provider.fetch(config).await
 }

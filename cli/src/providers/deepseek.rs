@@ -64,15 +64,22 @@ impl Provider for DeepSeekProvider {
             );
             details.insert(
                 "total_balance".into(),
-                serde_json::Value::Number(serde_json::Number::from_f64(total_balance).unwrap_or(serde_json::Number::from(0))),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(total_balance)
+                        .unwrap_or(serde_json::Number::from(0)),
+                ),
             );
             details.insert(
                 "granted_balance".into(),
-                serde_json::Value::Number(serde_json::Number::from_f64(granted).unwrap_or(serde_json::Number::from(0))),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(granted).unwrap_or(serde_json::Number::from(0)),
+                ),
             );
             details.insert(
                 "topped_up_balance".into(),
-                serde_json::Value::Number(serde_json::Number::from_f64(topped_up).unwrap_or(serde_json::Number::from(0))),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(topped_up).unwrap_or(serde_json::Number::from(0)),
+                ),
             );
             details.insert(
                 "is_available".into(),

@@ -25,8 +25,8 @@ struct ProviderCardView: View {
                                              ? (isSelected ? Color(red: 0.35, green: 0.65, blue: 1.0) : .white.opacity(0.9))
                                              : (isSelected ? Color(red: 0.1, green: 0.43, blue: 0.83) : Color(red: 0.1, green: 0.1, blue: 0.1)))  // #1A1A1A
                         Spacer()
-                        // Plan tag (StepFun only)
-                        if provider.providerId == "stepfun", let plan = d["plan_name"]?.stringValue {
+                        // Optional plan tag for quota-style providers
+                        if let plan = d["plan_name"]?.stringValue, !plan.isEmpty {
                             Text(plan)
                                 .font(.system(size: 12))
                                 .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))  // #999
@@ -63,7 +63,7 @@ struct ProviderCardView: View {
         if provider.providerId == "deepseek" {
             deepSeekDetails
         } else {
-            stepFunDetails
+            quotaWindowDetails
         }
     }
 
@@ -90,9 +90,9 @@ struct ProviderCardView: View {
         }
     }
 
-    // ── StepFun ───────────────────────────────────────
+    // ── Quota windows ─────────────────────────────────
 
-    private var stepFunDetails: some View {
+    private var quotaWindowDetails: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let rate = d["five_hour_usage_left_rate"]?.doubleValue {
                 let pct = Int((rate * 100).rounded())
@@ -103,6 +103,11 @@ struct ProviderCardView: View {
                 let pct = Int((rate * 100).rounded())
                 let reset = d["weekly_usage_reset_time"]?.stringValue
                 BarSection(title: "Weekly Window", percent: pct, resetTime: reader.resetIn(reset))
+            }
+            if let rate = d["monthly_usage_left_rate"]?.doubleValue {
+                let pct = Int((rate * 100).rounded())
+                let reset = d["monthly_usage_reset_time"]?.stringValue
+                BarSection(title: "Monthly Window", percent: pct, resetTime: reader.resetIn(reset))
             }
         }
     }
