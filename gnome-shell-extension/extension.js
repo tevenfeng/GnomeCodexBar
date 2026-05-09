@@ -78,13 +78,27 @@ export default class CodexBarExtension extends Extension {
         this._btn.set_child(bb);
         Main.panel._rightBox.insert_child_at_index(this._btn, 0);
 
+        this._popupBackdrop = new St.Widget({
+            reactive: true,
+            visible: false,
+            style: 'background-color: transparent;',
+        });
+        this._popupBackdrop.connect('button-press-event', (actor, ev) => {
+            if (ev.get_button() === 1) {
+                this._hidePopup();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
         this._popup = new St.BoxLayout({ vertical:true, style_class:'codex-bar-popup', reactive:true, style:'background-color:#2a2a2a;' });
         this._popup.hide();
+        Main.layoutManager.addChrome(this._popupBackdrop, { affectsInputRegion: true });
         Main.layoutManager.addChrome(this._popup, { affectsInputRegion: true });
 
         this._btn.connect('button-press-event', (a, ev) => {
             if (ev.get_button() !== 1) return Clutter.EVENT_PROPAGATE;
-            this._popup.visible ? this._popup.hide() : this._show();
+            this._popup.visible ? this._hidePopup() : this._show();
             return Clutter.EVENT_STOP;
         });
 
@@ -97,16 +111,18 @@ export default class CodexBarExtension extends Extension {
                 const [pw, ph] = this._popup.get_transformed_size();
                 const [bx, by] = this._btn.get_transformed_position();
                 const [bw, bh] = this._btn.get_transformed_size();
+                const source = ev.get_source?.();
+                if (source === this._popupBackdrop) return Clutter.EVENT_PROPAGATE;
                 if (x < px || x > px + pw || y < py || y > py + ph) {
                     if (x < bx || x > bx + bw || y < by || y > by + bh) {
-                        this._popup.hide();
+                        this._hidePopup();
                         return Clutter.EVENT_STOP;
                     }
                 }
             } else if (ev.type() === Clutter.EventType.KEY_PRESS) {
                 const sym = ev.get_key_symbol();
                 if (sym === Clutter.KEY_Escape) {
-                    this._popup.hide();
+                    this._hidePopup();
                     return Clutter.EVENT_STOP;
                 }
             }
@@ -115,17 +131,17 @@ export default class CodexBarExtension extends Extension {
 
         // Close popup when a window gains focus
         this._focusSig = global.display.connect('notify::focus-window', () => {
-            if (this._popup?.visible) {
-                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                    if (this._popup?.visible) this._popup.hide();
-                    return GLib.SOURCE_REMOVE;
-                });
-            }
+            if (!this._popup?.visible) return;
+            if (!global.display.focus_window) return;
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                if (this._popup?.visible) this._hidePopup();
+                return GLib.SOURCE_REMOVE;
+            });
         });
 
         // Close popup when overview is opened
         this._overviewSig = Main.overview.connect('showing', () => {
-            if (this._popup?.visible) this._popup.hide();
+            if (this._popup?.visible) this._hidePopup();
         });
 
         this._updatePanel();
@@ -155,8 +171,8 @@ export default class CodexBarExtension extends Extension {
         if (this._captureSig) { global.stage.disconnect(this._captureSig); this._captureSig = null; }
         if (this._focusSig) { global.display.disconnect(this._focusSig); this._focusSig = null; }
         if (this._overviewSig) { Main.overview.disconnect(this._overviewSig); this._overviewSig = null; }
-        [this._popup, this._btn].forEach(w => w?.destroy());
-        this._btn = this._popup = null;
+        [this._popup, this._popupBackdrop, this._btn].forEach(w => w?.destroy());
+        this._btn = this._popup = this._popupBackdrop = null;
     }
 
     /** Returns true if the system is using a light theme */
@@ -232,6 +248,22 @@ export default class CodexBarExtension extends Extension {
         this._showBtn(pr, sel);
     }
 
+    _hidePopup() {
+        if (this._popup?.visible) this._popup.hide();
+        if (this._popupBackdrop?.visible) this._popupBackdrop.hide();
+    }
+
+    _updatePopupBackdropGeometry() {
+        if (!this._popupBackdrop) return;
+        const m = Main.layoutManager.primaryMonitor;
+        const [, panelY] = Main.panel.get_transformed_position();
+        const [, panelH] = Main.panel.get_transformed_size();
+        const y = Math.max(m.y, panelY + panelH);
+        const height = Math.max(1, m.y + m.height - y);
+        this._popupBackdrop.set_position(m.x, y);
+        this._popupBackdrop.set_size(m.width, height);
+    }
+
     _showBtn(pr, sel) {
         const c = this._c();
         this._sn.text = sel === 'deepseek' ? 'DS' : 'SF';
@@ -267,6 +299,8 @@ export default class CodexBarExtension extends Extension {
         if (px+pw > m.x+m.width) px = m.x+m.width-pw-8;
         this._popup.set_position(Math.round(px), Math.round(by+bh+4));
         this._popup.show();
+        this._updatePopupBackdropGeometry();
+        this._popupBackdrop?.show();
     }
 
     _build() {
@@ -282,7 +316,7 @@ export default class CodexBarExtension extends Extension {
             try { GLib.spawn_command_line_async('codex-bar-cli fetch'); } catch(e) {}
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
                 this._updatePanel();
-                if (this._popup?.visible) { this._popup.destroy_all_children(); this._show(); }
+                if (this._popup?.visible) this._show();
                 return GLib.SOURCE_REMOVE;
             });
             return Clutter.EVENT_STOP;
@@ -340,7 +374,6 @@ export default class CodexBarExtension extends Extension {
         hdr.connect('button-press-event', () => {
             StatusReader.writeSelectedProvider(pid);
             this._updatePanel();
-            this._popup.destroy_all_children();
             this._show();
             return Clutter.EVENT_STOP;
         });
