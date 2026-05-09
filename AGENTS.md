@@ -15,24 +15,26 @@ GnomeCodexBar 是一个 **Rust CLI 后端 + 平台原生前端** 的双进程架
 ## 架构与数据流
 
 ```
-Rust CLI daemon
-  ├── DeepSeek: GET /user/balance (API Key 认证)
-  └── StepFun:  3-step login → QueryStepPlanRateLimit + GetStepPlanStatus (Cookie 认证)
-        │
-        ▼
-  status.json  (platform data dir / gnome-codex-bar/status.json)
-        │
-        ▼  (Gio.FileMonitor)
-  GNOME Shell Extension
-  ├── 顶栏按钮 (panelButton.js / extension.js)
-  └── 弹出详情窗口 (extension.js / popupMenu.js)
-
-        │
-        ▼  (DispatchSource)
-  macOS Menu Bar App (SwiftUI)
-  ├── 菜单栏指示器 (MenuBarExtra)
-  └── 弹出详情窗口 (PopoverContent)
+Rust CLI daemon                                       GNOME Shell Extension
+  ─────────────                                          ────────────────────
+  Config::load()──┬                                      ConfigManager ──┐
+                  │                                        │              │
+                  ▼                                        ▼              ▼
+              config.toml  ◄──── 两边读写同一个文件 ────  config.toml     
+                  │                                                       │
+                  ▼                                                       ▼
+  DeepSeek: GET /user/balance                         extension.js
+  StepFun:  3-step login → QueryStepPlanRateLimit      ├── 顶栏按钮
+                  │                                    ├── 弹出窗口
+                  ▼                                    ├── Provider 过滤
+              status.json  ──── Gio.FileMonitor ────→  └── 轮询定时器
 ```
+
+- **配置源**：`config.toml` 是刷新间隔和 Provider 开关的**唯一真源**
+- **CLI daemon**：每轮循环重新加载 `config.toml`，修改后无需重启
+- **Extension**：通过 `ConfigManager` 读写 `config.toml`，`Gio.FileMonitor` 监听变化
+- **GNOME 设置页**：修改刷新间隔和 Provider 开关直接写入 `config.toml`
+- **macOS 设置页**：同样读写同一个 `config.toml`（平台对应路径）
 
 ## 关键文件
 
@@ -54,9 +56,9 @@ Rust CLI daemon
 | 文件 | 职责 |
 |------|------|
 | `extension.js` | 主扩展类：顶栏按钮 + popup 构建 + 详情渲染（当前活跃版本） |
-| `popupMenu.js` | 基于 `PopupMenu.PopupMenu` 的备选实现（未启用） |
-| `panelButton.js` | 基于 `PanelMenu.Button` 的备选顶栏按钮（未启用） |
+| `configManager.js` | 轻量 TOML 读写（`config.toml`），管理刷新间隔和 Provider 开关 |
 | `statusReader.js` | 读取 `status.json` + `selected_provider.json` + 文件监听 |
+| `prefs.js` | GNOME 设置页：刷新间隔 + Provider enable/disable 开关 |
 | `stylesheet.css` | 所有样式定义 |
 
 ### macOS 菜单栏应用 (`macos-bar/`)
