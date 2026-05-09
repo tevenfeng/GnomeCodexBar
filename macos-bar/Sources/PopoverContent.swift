@@ -29,7 +29,7 @@ struct PopoverContent: View {
 
                 Menu {
                     Button("Settings...") {
-                        openWindow(id: "settings")
+                        openSettings()
                     }
                     Divider()
                     Button("Quit Codex Bar") {
@@ -100,6 +100,23 @@ struct PopoverContent: View {
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 reader.readStatus()
+            }
+        }
+    }
+
+    private func openSettings() {
+        openWindow(id: "settings")
+
+        // CodexBar is an LSUIElement menu bar app. SwiftUI's openWindow creates
+        // the settings window, but it does not always activate the app or bring
+        // the new window above the currently focused application.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+
+            if let settingsWindow = NSApplication.shared.windows.first(where: { $0.title == "Codex Bar Settings" }) {
+                settingsWindow.center()
+                settingsWindow.makeKeyAndOrderFront(nil)
+                settingsWindow.orderFrontRegardless()
             }
         }
     }

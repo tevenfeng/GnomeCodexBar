@@ -7,6 +7,7 @@ class StatusReader: ObservableObject {
     @Published var status: StatusSnapshot?
     @Published var selectedProvider: String?
     @Published var pollInterval: Double
+    @Published private var providerEnabled: [String: Bool]
 
     private var fileSource: DispatchSourceFileSystemObject?
     private var selectedSource: DispatchSourceFileSystemObject?
@@ -14,6 +15,7 @@ class StatusReader: ObservableObject {
 
     private let statusPath: URL
     private let selectedPath: URL
+    private let configPath: URL
 
     init() {
         // Use the same directory as the Rust CLI (dirs::data_local_dir())
@@ -22,10 +24,12 @@ class StatusReader: ObservableObject {
             .appendingPathComponent("Library/Application Support/gnome-codex-bar")
         self.statusPath = dataDir.appendingPathComponent("status.json")
         self.selectedPath = dataDir.appendingPathComponent("selected_provider.json")
+        self.configPath = dataDir.appendingPathComponent("config.toml")
 
-        // Load saved poll interval (default: 5s)
-        self.pollInterval = UserDefaults.standard.object(forKey: "pollInterval") as? Double ?? 5.0
+        self.pollInterval = 300
+        self.providerEnabled = [:]
 
+        readCliSettings()
         readStatus()
         readSelectedProvider()
         startMonitoring()
@@ -55,6 +59,122 @@ class StatusReader: ObservableObject {
     func writeSelectedProvider(_ id: String) {
         try? id.data(using: .utf8)?.write(to: selectedPath, options: .atomic)
         selectedProvider = id
+    }
+
+    // ── CLI config.toml ───────────────────────────────
+
+    /// Read settings shared with the Rust CLI daemon.
+    func readCliSettings() {
+        let content = (try? String(contentsOf: configPath, encoding: .utf8)) ?? defaultConfigText()
+
+        if let value = tomlValue(forKey: "refresh_interval_secs", inSection: "general", content: content),
+           let seconds = Double(value) {
+            pollInterval = seconds
+        }
+
+        for id in ["deepseek", "stepfun"] {
+            if let value = tomlValue(forKey: "enabled", inSection: "providers.\(id)", content: content) {
+                providerEnabled[id] = value.lowercased() != "false"
+            } else {
+                providerEnabled[id] = true
+            }
+        }
+    }
+
+    /// Persist refresh interval to CLI config.toml and restart the local fallback poll timer.
+    func setPollInterval(_ seconds: Double) {
+        pollInterval = seconds
+        updateConfigValue(
+            section: "general",
+            key: "refresh_interval_secs",
+            value: String(Int(seconds.rounded()))
+        )
+        restartPollTimer()
+    }
+
+    private func defaultConfigText() -> String {
+        """
+        [providers.deepseek]
+        enabled = true
+
+        [providers.stepfun]
+        enabled = true
+
+        [general]
+        refresh_interval_secs = 300
+        selected_provider = "deepseek"
+        """
+    }
+
+    private func tomlValue(forKey key: String, inSection section: String, content: String) -> String? {
+        var currentSection: String?
+        for rawLine in content.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") && line.hasSuffix("]") {
+                currentSection = String(line.dropFirst().dropLast())
+                continue
+            }
+            guard currentSection == section else { continue }
+            let prefix = "\(key) ="
+            if line.hasPrefix(prefix) {
+                return line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
+    }
+
+    private func updateConfigValue(section: String, key: String, value: String) {
+        let existing = (try? String(contentsOf: configPath, encoding: .utf8)) ?? defaultConfigText()
+        let updated = replacingTomlValue(in: existing, section: section, key: key, value: value)
+
+        do {
+            try FileManager.default.createDirectory(
+                at: configPath.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try updated.write(to: configPath, atomically: true, encoding: .utf8)
+        } catch {
+            print("Failed to write config.toml: \(error)")
+        }
+    }
+
+    private func replacingTomlValue(in content: String, section: String, key: String, value: String) -> String {
+        var lines = content.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() }
+
+        var sectionStart: Int?
+        var sectionEnd = lines.count
+
+        for (index, rawLine) in lines.enumerated() {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") && line.hasSuffix("]") {
+                let name = String(line.dropFirst().dropLast())
+                if name == section {
+                    sectionStart = index
+                    sectionEnd = lines.count
+                } else if sectionStart != nil {
+                    sectionEnd = index
+                    break
+                }
+            }
+        }
+
+        if let start = sectionStart {
+            for index in (start + 1)..<sectionEnd {
+                let line = lines[index].trimmingCharacters(in: .whitespaces)
+                if line.hasPrefix("\(key) =") {
+                    lines[index] = "\(key) = \(value)"
+                    return lines.joined(separator: "\n") + "\n"
+                }
+            }
+            lines.insert("\(key) = \(value)", at: sectionEnd)
+        } else {
+            if !lines.isEmpty { lines.append("") }
+            lines.append("[\(section)]")
+            lines.append("\(key) = \(value)")
+        }
+
+        return lines.joined(separator: "\n") + "\n"
     }
 
     // ── File monitoring ───────────────────────────────
@@ -132,17 +252,17 @@ class StatusReader: ObservableObject {
 
     /// Whether a provider is enabled in settings
     func isProviderEnabled(_ id: String) -> Bool {
-        // Default to enabled if not explicitly set
-        let key = "provider_enabled_\(id)"
-        return UserDefaults.standard.object(forKey: key) as? Bool ?? true
+        providerEnabled[id] ?? true
     }
 
     /// Enable or disable a provider
     func setProviderEnabled(_ id: String, enabled: Bool) {
-        let key = "provider_enabled_\(id)"
-        UserDefaults.standard.set(enabled, forKey: key)
-        // Trigger UI refresh
-        objectWillChange.send()
+        providerEnabled[id] = enabled
+        updateConfigValue(
+            section: "providers.\(id)",
+            key: "enabled",
+            value: enabled ? "true" : "false"
+        )
     }
 
     /// Providers filtered by enabled state

@@ -22,18 +22,17 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(colorScheme == .dark ? .white : Color(red: 0.1, green: 0.1, blue: 0.1))
 
-                Picker("Refresh every", selection: $reader.pollInterval) {
+                Picker("Refresh every", selection: Binding(
+                    get: { reader.pollInterval },
+                    set: { reader.setPollInterval($0) }
+                )) {
                     ForEach(intervals, id: \.1) { label, value in
                         Text(label).tag(value)
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: reader.pollInterval) { newValue in
-                    UserDefaults.standard.set(newValue, forKey: "pollInterval")
-                    reader.restartPollTimer()
-                }
 
-                Text("How often the app checks for updated data")
+                Text("Writes to CLI config.toml and controls daemon refresh interval")
                     .font(.system(size: 11))
                     .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))
             }
@@ -56,7 +55,7 @@ struct SettingsView: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.85) : Color(red: 0.2, green: 0.2, blue: 0.2))
                 }
 
-                Text("Disabled providers are hidden from the popover")
+                Text("Disabled providers are written to CLI config.toml")
                     .font(.system(size: 11))
                     .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))
             }

@@ -9,15 +9,18 @@ use crate::{
 };
 
 pub async fn run_daemon() -> anyhow::Result<()> {
-    let config = Config::load()?;
-    let interval = Duration::from_secs(config.general.refresh_interval_secs);
-
-    log::info!(
-        "Daemon started, refresh interval: {}s",
-        config.general.refresh_interval_secs
-    );
+    log::info!("Daemon started");
 
     loop {
+        // Reload config every cycle so UI changes (refresh interval / provider enabled)
+        // take effect without restarting the daemon.
+        let config = Config::load()?;
+        let interval_secs = config.general.refresh_interval_secs;
+        log::info!(
+            "Refresh cycle started, interval: {}s",
+            interval_secs
+        );
+
         let result = fetch_all(&config).await;
         match result {
             Ok(snapshot) => {
@@ -32,7 +35,25 @@ pub async fn run_daemon() -> anyhow::Result<()> {
             }
         }
 
-        tokio::time::sleep(interval).await;
+        sleep_until_next_cycle(interval_secs).await;
+    }
+}
+
+async fn sleep_until_next_cycle(initial_interval_secs: u64) {
+    let mut elapsed_secs = 0;
+
+    loop {
+        let current_interval_secs = Config::load()
+            .map(|config| config.general.refresh_interval_secs)
+            .unwrap_or(initial_interval_secs);
+
+        if elapsed_secs >= current_interval_secs {
+            break;
+        }
+
+        let step_secs = (current_interval_secs - elapsed_secs).min(1);
+        tokio::time::sleep(Duration::from_secs(step_secs)).await;
+        elapsed_secs += step_secs;
     }
 }
 
