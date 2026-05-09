@@ -26,6 +26,16 @@
 - **StepFun**：显示套餐名称（Plus/Mini 等）、5h 窗口和周窗口剩余百分比、重置倒计时
 - **跨平台**：Linux (GNOME Shell Extension) + macOS (SwiftUI Menu Bar App)
 
+## 截图
+
+| ZorinOS / GNOME 浅色 | macOS 浅色 |
+|---|---|
+| ![ZorinOS GNOME light](screenshots/gnome-light.png) | ![macOS light](screenshots/macos-light.png) |
+
+| ZorinOS / GNOME 深色 | macOS 深色 |
+|---|---|
+| ![ZorinOS GNOME dark](screenshots/gnome-dark.png) | ![macOS dark](screenshots/macos-dark.png) |
+
 ## 架构
 
 ```
