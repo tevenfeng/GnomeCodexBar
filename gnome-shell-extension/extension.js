@@ -5,6 +5,7 @@ import Gio from 'gi://Gio';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as StatusReader from './statusReader.js';
+import {ConfigManager} from './configManager.js';
 
 const P = { deepseek: 'DeepSeek', stepfun: 'StepFun' };
 
@@ -128,14 +129,27 @@ export default class CodexBarExtension extends Extension {
         });
 
         this._updatePanel();
-        const iv = this.getSettings().get_int('refresh-interval');
-        this._t = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, iv, () => { this._updatePanel(); return GLib.SOURCE_CONTINUE; });
+
+        // Read refresh interval from config.toml (primary), fallback to GSettings
+        this._cfg = new ConfigManager();
+        let iv = this._cfg.getRefreshInterval();
+        if (iv === null) iv = this.getSettings().get_int('refresh-interval');
+        this._startTimer(iv);
+
+        // Monitor config.toml for changes
+        this._cfg.monitor(() => {
+            const newIv = this._cfg.getRefreshInterval() ?? this.getSettings().get_int('refresh-interval');
+            if (newIv !== this._currIv) this._startTimer(newIv);
+            this._updatePanel();
+        });
+
         this._m = StatusReader.monitorStatus(() => this._updatePanel());
     }
 
     disable() {
         if (this._t) GLib.Source.remove(this._t);
         if (this._m) this._m.cancel();
+        if (this._cfg) { this._cfg.destroy(); this._cfg = null; }
         if (this._themeSig) { this._ifaceSettings.disconnect(this._themeSig); this._themeSig = null; }
         if (this._gtkThemeSig) { this._ifaceSettings.disconnect(this._gtkThemeSig); this._gtkThemeSig = null; }
         if (this._captureSig) { global.stage.disconnect(this._captureSig); this._captureSig = null; }
@@ -199,12 +213,22 @@ export default class CodexBarExtension extends Extension {
         } catch (e) { return null; }
     }
 
+    _startTimer(seconds) {
+        if (this._t) { GLib.Source.remove(this._t); this._t = null; }
+        this._currIv = seconds;
+        this._t = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => { this._updatePanel(); return GLib.SOURCE_CONTINUE; });
+    }
+
     _updatePanel() {
         if (!this._btn) return;
         const s = StatusReader.readStatus(), sel = StatusReader.readSelectedProvider();
         const c = this._c();
         if (!s?.providers) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.err};`; this._lb.text='--'; return; }
-        const pr = s.providers.find(x => x.provider_id === sel) || s.providers[0];
+        // Filter by enabled providers
+        const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
+        const active = s.providers.filter(p => enabled[p.provider_id] !== false);
+        if (active.length === 0) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.faint};`; this._lb.text='--'; return; }
+        const pr = active.find(x => x.provider_id === sel) || active[0];
         this._showBtn(pr, sel);
     }
 
@@ -269,13 +293,17 @@ export default class CodexBarExtension extends Extension {
         if (!s?.providers) {
             r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
         } else {
-            const providers = s.providers;
-            for (let i = 0; i < providers.length; i++) {
-                if (i > 0) {
-                    // Divider between providers
-                    r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+            const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
+            const providers = s.providers.filter(p => enabled[p.provider_id] !== false);
+            if (providers.length === 0) {
+                r.add_child(new St.Label({ text:'No providers enabled.\nEnable providers in extension settings.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
+            } else {
+                for (let i = 0; i < providers.length; i++) {
+                    if (i > 0) {
+                        r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+                    }
+                    this._addProviderSection(r, providers[i], sel, s.updated_at);
                 }
-                this._addProviderSection(r, providers[i], sel, s.updated_at);
             }
         }
         this._popup.add_child(r);
