@@ -93,7 +93,8 @@ struct PopoverContent: View {
     private func refresh() {
         DispatchQueue.global(qos: .userInitiated).async {
             let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/local/bin/codex-bar-cli")
+            task.executableURL = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".local/bin/codex-bar-cli")
             task.arguments = ["fetch"]
             try? task.run()
             task.waitUntilExit()

@@ -49,9 +49,7 @@ fn test_provider_status_serialization() {
         provider_name: "DeepSeek".into(),
         available: true,
         remaining_percent: 50.0,
-        details: HashMap::from([
-            ("total_balance".into(), serde_json::json!(5.0)),
-        ]),
+        details: HashMap::from([("total_balance".into(), serde_json::json!(5.0))]),
         error: Some("timeout".into()),
     };
 

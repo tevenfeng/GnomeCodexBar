@@ -19,6 +19,9 @@ pub struct ProviderConfig {
     // StepFun
     pub username: Option<String>,
     pub password: Option<String>,
+    // OpenCode Go
+    pub cookie_header: Option<String>,
+    pub workspace_id: Option<String>,
 }
 
 /// Unified status for a single provider.
@@ -42,6 +45,7 @@ pub struct StatusSnapshot {
 }
 
 pub mod deepseek;
+pub mod opencodego;
 pub mod stepfun;
 
 #[cfg(test)]

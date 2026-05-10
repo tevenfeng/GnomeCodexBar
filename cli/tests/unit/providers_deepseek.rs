@@ -61,7 +61,11 @@ fn test_deepseek_empty_balance_infos() {
 
     // Empty balance_infos should yield remaining_percent = 0%
     // (matches the logic in fetch: else branch when .first() returns None)
-    let remaining_percent: f64 = if resp.balance_infos.first().is_some() { 100.0 } else { 0.0 };
+    let remaining_percent: f64 = if resp.balance_infos.first().is_some() {
+        100.0
+    } else {
+        0.0
+    };
     assert!((remaining_percent - 0.0_f64).abs() < f64::EPSILON);
 }
 

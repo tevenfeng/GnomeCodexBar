@@ -7,6 +7,8 @@ fn test_provider_config_default() {
     assert!(config.api_key.is_none());
     assert!(config.username.is_none());
     assert!(config.password.is_none());
+    assert!(config.cookie_header.is_none());
+    assert!(config.workspace_id.is_none());
 }
 
 #[test]
@@ -16,6 +18,8 @@ fn test_provider_config_serialization() {
         api_key: Some("sk-test-123".into()),
         username: Some("user@example.com".into()),
         password: Some("secret".into()),
+        cookie_header: Some("sid=test".into()),
+        workspace_id: Some("wrk_test".into()),
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -25,6 +29,8 @@ fn test_provider_config_serialization() {
     assert_eq!(deserialized.api_key, config.api_key);
     assert_eq!(deserialized.username, config.username);
     assert_eq!(deserialized.password, config.password);
+    assert_eq!(deserialized.cookie_header, config.cookie_header);
+    assert_eq!(deserialized.workspace_id, config.workspace_id);
 }
 
 #[test]

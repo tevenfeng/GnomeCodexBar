@@ -158,7 +158,11 @@ fn status_systemd() -> anyhow::Result<String> {
          Active: {}\n\
          Enabled: {}",
         path.display(),
-        if file_exists { "(exists)" } else { "(not found)" },
+        if file_exists {
+            "(exists)"
+        } else {
+            "(not found)"
+        },
         active,
         enabled,
     ))
@@ -283,7 +287,11 @@ fn status_launchd() -> anyhow::Result<String> {
          Plist: {} {}\n\
          Loaded: {}",
         path.display(),
-        if file_exists { "(exists)" } else { "(not found)" },
+        if file_exists {
+            "(exists)"
+        } else {
+            "(not found)"
+        },
         if loaded { "yes" } else { "no" },
     ))
 }

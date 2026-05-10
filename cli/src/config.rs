@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +20,10 @@ pub struct ProviderItem {
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cookie_header: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     // StepFun token cache
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_token: Option<String>,
@@ -55,22 +55,45 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             providers: HashMap::from([
-                ("deepseek".into(), ProviderItem {
-                    enabled: true,
-                    api_key: None,
-                    username: None,
-                    password: None,
-                    cached_token: None,
-                    cached_ingress_cookie: None,
-                }),
-                ("stepfun".into(), ProviderItem {
-                    enabled: true,
-                    api_key: None,
-                    username: None,
-                    password: None,
-                    cached_token: None,
-                    cached_ingress_cookie: None,
-                }),
+                (
+                    "deepseek".into(),
+                    ProviderItem {
+                        enabled: true,
+                        api_key: None,
+                        username: None,
+                        password: None,
+                        cookie_header: None,
+                        workspace_id: None,
+                        cached_token: None,
+                        cached_ingress_cookie: None,
+                    },
+                ),
+                (
+                    "stepfun".into(),
+                    ProviderItem {
+                        enabled: true,
+                        api_key: None,
+                        username: None,
+                        password: None,
+                        cookie_header: None,
+                        workspace_id: None,
+                        cached_token: None,
+                        cached_ingress_cookie: None,
+                    },
+                ),
+                (
+                    "opencodego".into(),
+                    ProviderItem {
+                        enabled: false,
+                        api_key: None,
+                        username: None,
+                        password: None,
+                        cookie_header: None,
+                        workspace_id: None,
+                        cached_token: None,
+                        cached_ingress_cookie: None,
+                    },
+                ),
             ]),
             general: GeneralConfig {
                 refresh_interval_secs: 300,
@@ -98,14 +121,13 @@ impl Config {
                 if let Some(parent) = path.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
-                let _: Result<(), std::io::Error> = fs::rename(&old_path, &path)
-                    .or_else(|_| {
-                        // Fall back to copy+delete if cross-device
-                        let content = fs::read_to_string(&old_path)?;
-                        fs::write(&path, &content)?;
-                        let _ = fs::remove_file(&old_path);
-                        Ok(())
-                    });
+                let _: Result<(), std::io::Error> = fs::rename(&old_path, &path).or_else(|_| {
+                    // Fall back to copy+delete if cross-device
+                    let content = fs::read_to_string(&old_path)?;
+                    fs::write(&path, &content)?;
+                    let _ = fs::remove_file(&old_path);
+                    Ok(())
+                });
             }
         }
 
@@ -128,6 +150,13 @@ impl Config {
         }
         let content = toml::to_string_pretty(self)?;
         fs::write(&path, content)?;
+        // config.toml may contain credentials (API keys, passwords, cookies).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::Permissions::from_mode(0o600);
+            let _ = fs::set_permissions(&path, perms);
+        }
         Ok(())
     }
 
@@ -138,6 +167,8 @@ impl Config {
             api_key: p.and_then(|p| p.api_key.clone()),
             username: None,
             password: None,
+            cookie_header: None,
+            workspace_id: None,
         }
     }
 
@@ -148,6 +179,20 @@ impl Config {
             api_key: None,
             username: p.and_then(|p| p.username.clone()),
             password: p.and_then(|p| p.password.clone()),
+            cookie_header: None,
+            workspace_id: None,
+        }
+    }
+
+    pub fn opencodego_config(&self) -> super::providers::ProviderConfig {
+        let p = self.providers.get("opencodego");
+        super::providers::ProviderConfig {
+            enabled: p.map(|p| p.enabled).unwrap_or(false),
+            api_key: None,
+            username: None,
+            password: None,
+            cookie_header: p.and_then(|p| p.cookie_header.clone()),
+            workspace_id: p.and_then(|p| p.workspace_id.clone()),
         }
     }
 }

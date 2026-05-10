@@ -47,17 +47,31 @@ class StatusReader: ObservableObject {
 
     func readSelectedProvider() {
         guard let data = try? Data(contentsOf: selectedPath),
-              let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !str.isEmpty else {
+              !data.isEmpty else {
             selectedProvider = nil
             return
         }
-        selectedProvider = str
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let selected = object["selected_provider"] as? String,
+           !selected.isEmpty {
+            selectedProvider = selected
+            return
+        }
+        // Backward compatibility for older raw-text writes.
+        if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !str.isEmpty {
+            selectedProvider = str
+        } else {
+            selectedProvider = nil
+        }
     }
 
     /// Write selected provider ID to selected_provider.json
     func writeSelectedProvider(_ id: String) {
-        try? id.data(using: .utf8)?.write(to: selectedPath, options: .atomic)
+        let object = ["selected_provider": id]
+        if let data = try? JSONSerialization.data(withJSONObject: object) {
+            try? data.write(to: selectedPath, options: .atomic)
+        }
         selectedProvider = id
     }
 
@@ -72,11 +86,11 @@ class StatusReader: ObservableObject {
             pollInterval = seconds
         }
 
-        for id in ["deepseek", "stepfun"] {
+        for id in ["deepseek", "stepfun", "opencodego"] {
             if let value = tomlValue(forKey: "enabled", inSection: "providers.\(id)", content: content) {
                 providerEnabled[id] = value.lowercased() != "false"
             } else {
-                providerEnabled[id] = true
+                providerEnabled[id] = id != "opencodego"
             }
         }
     }
@@ -99,6 +113,9 @@ class StatusReader: ObservableObject {
 
         [providers.stepfun]
         enabled = true
+
+        [providers.opencodego]
+        enabled = false
 
         [general]
         refresh_interval_secs = 300
@@ -239,7 +256,7 @@ class StatusReader: ObservableObject {
 
     /// All provider IDs known from status data
     var allProviderIDs: [String] {
-        status?.providers.map { $0.providerId } ?? ["deepseek", "stepfun"]
+        status?.providers.map { $0.providerId } ?? ["deepseek", "stepfun", "opencodego"]
     }
 
     /// Display name for a provider ID
@@ -247,7 +264,12 @@ class StatusReader: ObservableObject {
         if let p = status?.providers.first(where: { $0.providerId == id }) {
             return p.providerName
         }
-        return id == "deepseek" ? "DeepSeek" : "StepFun"
+        switch id {
+        case "deepseek": return "DeepSeek"
+        case "stepfun": return "StepFun"
+        case "opencodego": return "OpenCode Go"
+        default: return id
+        }
     }
 
     /// Whether a provider is enabled in settings
@@ -330,7 +352,7 @@ class StatusReader: ObservableObject {
             let sym = cu == "USD" ? "$" : "¥"
             return "\(sym)\(String(format: "%.2f", t))"
         } else {
-            // StepFun: show 5h window remaining percent
+            // Quota-style providers: show 5h window remaining percent
             if let rate = pr.details["five_hour_usage_left_rate"]?.doubleValue {
                 let pct = Int((rate * 100).rounded())
                 return "\(pct)%"
@@ -341,9 +363,15 @@ class StatusReader: ObservableObject {
         }
     }
 
-    /// Short label for menu bar button (DS / SF)
+    /// Short label for menu bar button (DS / SF / OCG)
     var shortLabel: String {
-        (selectedProvider ?? "stepfun") == "deepseek" ? "DS" : "SF"
+        switch selectedProvider ?? activeProvider?.providerId ?? "stepfun" {
+        case "deepseek": return "DS"
+        case "stepfun": return "SF"
+        case "opencodego": return "OCG"
+        default:
+            return String((selectedProvider ?? "--").prefix(3)).uppercased()
+        }
     }
 
     /// Status color: ok/warn/err based on remaining percent

@@ -1,9 +1,6 @@
 use std::fs;
 
-use crate::{
-    config::status_dir,
-    providers::StatusSnapshot,
-};
+use crate::{config::status_dir, providers::StatusSnapshot};
 
 /// Write status snapshot to status.json in the platform-specific data directory
 /// Linux: ~/.local/share/gnome-codex-bar/status.json

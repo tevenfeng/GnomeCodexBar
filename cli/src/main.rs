@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Parser)]
 #[command(name = "codex-bar-cli")]
-#[command(about = "Monitor DeepSeek and StepFun coding plan usage")]
+#[command(about = "Monitor DeepSeek, StepFun, and OpenCode Go coding plan usage")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -23,7 +23,7 @@ struct Cli {
 enum Commands {
     /// Configure provider settings
     Config {
-        /// Provider name (deepseek or stepfun)
+        /// Provider name (deepseek, stepfun, or opencodego)
         provider: String,
         /// Set API key (for DeepSeek)
         #[arg(long)]
@@ -34,6 +34,12 @@ enum Commands {
         /// Set password (for StepFun)
         #[arg(long)]
         password: Option<String>,
+        /// Set Cookie header (for OpenCode Go)
+        #[arg(long)]
+        cookie_header: Option<String>,
+        /// Set workspace ID (for OpenCode Go, e.g. wrk_...)
+        #[arg(long)]
+        workspace_id: Option<String>,
         /// Enable or disable this provider
         #[arg(long)]
         enabled: Option<bool>,
@@ -51,7 +57,7 @@ enum Commands {
     },
     /// Select which provider to display in the panel
     Select {
-        /// Provider id (deepseek or stepfun)
+        /// Provider id (deepseek, stepfun, or opencodego)
         provider: String,
     },
     /// Manage auto-start of the daemon on login
@@ -75,6 +81,8 @@ async fn main() -> anyhow::Result<()> {
             api_key,
             username,
             password,
+            cookie_header,
+            workspace_id,
             enabled,
         } => {
             let mut config = Config::load()?;
@@ -86,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
                     api_key: None,
                     username: None,
                     password: None,
+                    cookie_header: None,
+                    workspace_id: None,
                     cached_token: None,
                     cached_ingress_cookie: None,
                 });
@@ -99,6 +109,12 @@ async fn main() -> anyhow::Result<()> {
             if let Some(pass) = password {
                 entry.password = Some(pass);
             }
+            if let Some(cookie) = cookie_header {
+                entry.cookie_header = Some(cookie);
+            }
+            if let Some(workspace) = workspace_id {
+                entry.workspace_id = Some(workspace);
+            }
             if let Some(en) = enabled {
                 entry.enabled = en;
             }
@@ -111,10 +127,7 @@ async fn main() -> anyhow::Result<()> {
             let config = Config::load()?;
             let snapshot = fetch_all(&config).await?;
             output::write_status(&snapshot)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&snapshot)?
-            );
+            println!("{}", serde_json::to_string_pretty(&snapshot)?);
         }
 
         Commands::Daemon => {
@@ -143,28 +156,26 @@ async fn main() -> anyhow::Result<()> {
             println!("Selected provider in panel: {}", provider);
         }
 
-        Commands::Autostart { action } => {
-            match action.as_str() {
-                "enable" => {
-                    let msg = autostart::enable()?;
-                    println!("{}", msg);
-                }
-                "disable" => {
-                    let msg = autostart::disable()?;
-                    println!("{}", msg);
-                }
-                "status" => {
-                    let msg = autostart::status()?;
-                    println!("{}", msg);
-                }
-                _ => {
-                    anyhow::bail!(
-                        "Unknown autostart action '{}'. Use: enable, disable, or status",
-                        action
-                    );
-                }
+        Commands::Autostart { action } => match action.as_str() {
+            "enable" => {
+                let msg = autostart::enable()?;
+                println!("{}", msg);
             }
-        }
+            "disable" => {
+                let msg = autostart::disable()?;
+                println!("{}", msg);
+            }
+            "status" => {
+                let msg = autostart::status()?;
+                println!("{}", msg);
+            }
+            _ => {
+                anyhow::bail!(
+                    "Unknown autostart action '{}'. Use: enable, disable, or status",
+                    action
+                );
+            }
+        },
     }
 
     Ok(())
