@@ -63,5 +63,13 @@ export default class CodexBarPreferences extends ExtensionPreferences {
         sfRow.set_active(cfg.isProviderEnabled('stepfun'));
         sfRow.connect('notify::active', () => cfg.setProviderEnabled('stepfun', sfRow.active));
         provGrp.add(sfRow);
+
+        const ocgRow = new Adw.SwitchRow({
+            title: _('OpenCode Go'),
+            subtitle: _('5h, weekly, and monthly coding plan limits'),
+        });
+        ocgRow.set_active(cfg.isProviderEnabled('opencodego'));
+        ocgRow.connect('notify::active', () => cfg.setProviderEnabled('opencodego', ocgRow.active));
+        provGrp.add(ocgRow);
     }
 }

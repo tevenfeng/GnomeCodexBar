@@ -157,7 +157,7 @@ export class ConfigManager {
     // Get all provider enabled states
     getProviderEnabledMap() {
         const map = {};
-        for (const pid of ['deepseek', 'stepfun']) {
+        for (const pid of ['deepseek', 'stepfun', 'opencodego']) {
             map[pid] = this.isProviderEnabled(pid);
         }
         return map;
@@ -176,6 +176,9 @@ export class ConfigManager {
                 '',
                 '[providers.stepfun]',
                 'enabled = true',
+                '',
+                '[providers.opencodego]',
+                'enabled = false',
                 '',
                 '[general]',
                 'refresh_interval_secs = 300',
