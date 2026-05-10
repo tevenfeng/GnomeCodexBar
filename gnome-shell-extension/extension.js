@@ -83,12 +83,9 @@ export default class CodexBarExtension extends Extension {
             visible: false,
             style: 'background-color: transparent;',
         });
-        this._popupBackdrop.connect('button-press-event', (actor, ev) => {
-            if (ev.get_button() === 1) {
-                this._hidePopup();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
+        this._popupBackdrop.connect('button-press-event', () => {
+            this._hidePopup();
+            return Clutter.EVENT_STOP;
         });
 
         this._popup = new St.BoxLayout({ vertical:true, style_class:'codex-bar-popup', reactive:true, style:'background-color:#2a2a2a;' });
@@ -112,7 +109,10 @@ export default class CodexBarExtension extends Extension {
                 const [bx, by] = this._btn.get_transformed_position();
                 const [bw, bh] = this._btn.get_transformed_size();
                 const source = ev.get_source?.();
-                if (source === this._popupBackdrop) return Clutter.EVENT_PROPAGATE;
+                if (source === this._popupBackdrop) {
+                    this._hidePopup();
+                    return Clutter.EVENT_STOP;
+                }
                 if (x < px || x > px + pw || y < py || y > py + ph) {
                     if (x < bx || x > bx + bw || y < by || y > by + bh) {
                         this._hidePopup();
