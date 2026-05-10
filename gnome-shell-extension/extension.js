@@ -5,6 +5,7 @@ import Gio from 'gi://Gio';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as StatusReader from './statusReader.js';
+import {ConfigManager} from './configManager.js';
 
 const P = { deepseek: 'DeepSeek', stepfun: 'StepFun', opencodego: 'OpenCode Go' };
 
@@ -77,13 +78,27 @@ export default class CodexBarExtension extends Extension {
         this._btn.set_child(bb);
         Main.panel._rightBox.insert_child_at_index(this._btn, 0);
 
+        this._popupBackdrop = new St.Widget({
+            reactive: true,
+            visible: false,
+            style: 'background-color: transparent;',
+        });
+        this._popupBackdrop.connect('button-press-event', (actor, ev) => {
+            if (ev.get_button() === 1) {
+                this._hidePopup();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
         this._popup = new St.BoxLayout({ vertical:true, style_class:'codex-bar-popup', reactive:true, style:'background-color:#2a2a2a;' });
         this._popup.hide();
+        Main.layoutManager.addChrome(this._popupBackdrop, { affectsInputRegion: true });
         Main.layoutManager.addChrome(this._popup, { affectsInputRegion: true });
 
         this._btn.connect('button-press-event', (a, ev) => {
             if (ev.get_button() !== 1) return Clutter.EVENT_PROPAGATE;
-            this._popup.visible ? this._popup.hide() : this._show();
+            this._popup.visible ? this._hidePopup() : this._show();
             return Clutter.EVENT_STOP;
         });
 
@@ -96,16 +111,18 @@ export default class CodexBarExtension extends Extension {
                 const [pw, ph] = this._popup.get_transformed_size();
                 const [bx, by] = this._btn.get_transformed_position();
                 const [bw, bh] = this._btn.get_transformed_size();
+                const source = ev.get_source?.();
+                if (source === this._popupBackdrop) return Clutter.EVENT_PROPAGATE;
                 if (x < px || x > px + pw || y < py || y > py + ph) {
                     if (x < bx || x > bx + bw || y < by || y > by + bh) {
-                        this._popup.hide();
+                        this._hidePopup();
                         return Clutter.EVENT_STOP;
                     }
                 }
             } else if (ev.type() === Clutter.EventType.KEY_PRESS) {
                 const sym = ev.get_key_symbol();
                 if (sym === Clutter.KEY_Escape) {
-                    this._popup.hide();
+                    this._hidePopup();
                     return Clutter.EVENT_STOP;
                 }
             }
@@ -114,35 +131,48 @@ export default class CodexBarExtension extends Extension {
 
         // Close popup when a window gains focus
         this._focusSig = global.display.connect('notify::focus-window', () => {
-            if (this._popup?.visible) {
-                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                    if (this._popup?.visible) this._popup.hide();
-                    return GLib.SOURCE_REMOVE;
-                });
-            }
+            if (!this._popup?.visible) return;
+            if (!global.display.focus_window) return;
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                if (this._popup?.visible) this._hidePopup();
+                return GLib.SOURCE_REMOVE;
+            });
         });
 
         // Close popup when overview is opened
         this._overviewSig = Main.overview.connect('showing', () => {
-            if (this._popup?.visible) this._popup.hide();
+            if (this._popup?.visible) this._hidePopup();
         });
 
         this._updatePanel();
-        const iv = this.getSettings().get_int('refresh-interval');
-        this._t = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, iv, () => { this._updatePanel(); return GLib.SOURCE_CONTINUE; });
+
+        // Read refresh interval from config.toml (primary), fallback to GSettings
+        this._cfg = new ConfigManager();
+        let iv = this._cfg.getRefreshInterval();
+        if (iv === null) iv = this.getSettings().get_int('refresh-interval');
+        this._startTimer(iv);
+
+        // Monitor config.toml for changes
+        this._cfg.monitor(() => {
+            const newIv = this._cfg.getRefreshInterval() ?? this.getSettings().get_int('refresh-interval');
+            if (newIv !== this._currIv) this._startTimer(newIv);
+            this._updatePanel();
+        });
+
         this._m = StatusReader.monitorStatus(() => this._updatePanel());
     }
 
     disable() {
         if (this._t) GLib.Source.remove(this._t);
         if (this._m) this._m.cancel();
+        if (this._cfg) { this._cfg.destroy(); this._cfg = null; }
         if (this._themeSig) { this._ifaceSettings.disconnect(this._themeSig); this._themeSig = null; }
         if (this._gtkThemeSig) { this._ifaceSettings.disconnect(this._gtkThemeSig); this._gtkThemeSig = null; }
         if (this._captureSig) { global.stage.disconnect(this._captureSig); this._captureSig = null; }
         if (this._focusSig) { global.display.disconnect(this._focusSig); this._focusSig = null; }
         if (this._overviewSig) { Main.overview.disconnect(this._overviewSig); this._overviewSig = null; }
-        [this._popup, this._btn].forEach(w => w?.destroy());
-        this._btn = this._popup = null;
+        [this._popup, this._popupBackdrop, this._btn].forEach(w => w?.destroy());
+        this._btn = this._popup = this._popupBackdrop = null;
     }
 
     /** Returns true if the system is using a light theme */
@@ -206,13 +236,39 @@ export default class CodexBarExtension extends Extension {
         } catch (e) { return null; }
     }
 
+    _startTimer(seconds) {
+        if (this._t) { GLib.Source.remove(this._t); this._t = null; }
+        this._currIv = seconds;
+        this._t = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => { this._updatePanel(); return GLib.SOURCE_CONTINUE; });
+    }
+
     _updatePanel() {
         if (!this._btn) return;
         const s = StatusReader.readStatus(), sel = StatusReader.readSelectedProvider();
         const c = this._c();
         if (!s?.providers) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.err};`; this._lb.text='--'; return; }
-        const pr = s.providers.find(x => x.provider_id === sel) || s.providers[0];
+        // Filter by enabled providers
+        const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
+        const active = s.providers.filter(p => enabled[p.provider_id] !== false);
+        if (active.length === 0) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.faint};`; this._lb.text='--'; return; }
+        const pr = active.find(x => x.provider_id === sel) || active[0];
         this._showBtn(pr, sel);
+    }
+
+    _hidePopup() {
+        if (this._popup?.visible) this._popup.hide();
+        if (this._popupBackdrop?.visible) this._popupBackdrop.hide();
+    }
+
+    _updatePopupBackdropGeometry() {
+        if (!this._popupBackdrop) return;
+        const m = Main.layoutManager.primaryMonitor;
+        const [, panelY] = Main.panel.get_transformed_position();
+        const [, panelH] = Main.panel.get_transformed_size();
+        const y = Math.max(m.y, panelY + panelH);
+        const height = Math.max(1, m.y + m.height - y);
+        this._popupBackdrop.set_position(m.x, y);
+        this._popupBackdrop.set_size(m.width, height);
     }
 
     _showBtn(pr, sel) {
@@ -251,6 +307,8 @@ export default class CodexBarExtension extends Extension {
         if (px+pw > m.x+m.width) px = m.x+m.width-pw-8;
         this._popup.set_position(Math.round(px), Math.round(by+bh+4));
         this._popup.show();
+        this._updatePopupBackdropGeometry();
+        this._popupBackdrop?.show();
     }
 
     _build() {
@@ -266,7 +324,7 @@ export default class CodexBarExtension extends Extension {
             try { GLib.spawn_command_line_async('codex-bar-cli fetch'); } catch(e) {}
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
                 this._updatePanel();
-                if (this._popup?.visible) { this._popup.destroy_all_children(); this._show(); }
+                if (this._popup?.visible) this._show();
                 return GLib.SOURCE_REMOVE;
             });
             return Clutter.EVENT_STOP;
@@ -277,13 +335,17 @@ export default class CodexBarExtension extends Extension {
         if (!s?.providers) {
             r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
         } else {
-            const providers = s.providers;
-            for (let i = 0; i < providers.length; i++) {
-                if (i > 0) {
-                    // Divider between providers
-                    r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+            const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
+            const providers = s.providers.filter(p => enabled[p.provider_id] !== false);
+            if (providers.length === 0) {
+                r.add_child(new St.Label({ text:'No providers enabled.\nEnable providers in extension settings.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
+            } else {
+                for (let i = 0; i < providers.length; i++) {
+                    if (i > 0) {
+                        r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
+                    }
+                    this._addProviderSection(r, providers[i], sel, s.updated_at);
                 }
-                this._addProviderSection(r, providers[i], sel, s.updated_at);
             }
         }
         this._popup.add_child(r);
@@ -320,7 +382,6 @@ export default class CodexBarExtension extends Extension {
         hdr.connect('button-press-event', () => {
             StatusReader.writeSelectedProvider(pid);
             this._updatePanel();
-            this._popup.destroy_all_children();
             this._show();
             return Clutter.EVENT_STOP;
         });

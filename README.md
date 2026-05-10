@@ -27,6 +27,16 @@
 - **OpenCode Go**：通过 Cookie Header + workspace id 获取 5h、周、月窗口剩余百分比和重置倒计时
 - **跨平台**：Linux (GNOME Shell Extension) + macOS (SwiftUI Menu Bar App)
 
+## 截图
+
+| ZorinOS / GNOME 浅色 | macOS 浅色 |
+|---|---|
+| ![ZorinOS GNOME light](screenshots/gnome-light.png) | ![macOS light](screenshots/macos-light.png) |
+
+| ZorinOS / GNOME 深色 | macOS 深色 |
+|---|---|
+| ![ZorinOS GNOME dark](screenshots/gnome-dark.png) | ![macOS dark](screenshots/macos-dark.png) |
+
 ## 架构
 
 ```
