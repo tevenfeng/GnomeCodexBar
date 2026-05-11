@@ -14,29 +14,35 @@ use crate::{
 pub async fn run_daemon() -> anyhow::Result<()> {
     log::info!("Daemon started");
 
+    // Fetch immediately on startup so the frontends do not wait for the first
+    // refresh interval before status.json is populated or refreshed.
+    let mut config = Config::load()?;
+    let mut interval_secs = config.general.refresh_interval_secs;
+    log::info!("Initial refresh started, interval: {}s", interval_secs);
+    if let Err(e) = fetch_and_write_status(&config).await {
+        log::error!("Initial fetch failed: {}", e);
+    }
+
     loop {
+        sleep_until_next_cycle(interval_secs).await;
+
         // Reload config every cycle so UI changes (refresh interval / provider enabled)
         // take effect without restarting the daemon.
-        let config = Config::load()?;
-        let interval_secs = config.general.refresh_interval_secs;
+        config = Config::load()?;
+        interval_secs = config.general.refresh_interval_secs;
         log::info!("Refresh cycle started, interval: {}s", interval_secs);
 
-        let result = fetch_all(&config).await;
-        match result {
-            Ok(snapshot) => {
-                if let Err(e) = output::write_status(&snapshot) {
-                    log::error!("Failed to write status: {}", e);
-                } else {
-                    log::info!("Status updated at {}", snapshot.updated_at);
-                }
-            }
-            Err(e) => {
-                log::error!("Fetch failed: {}", e);
-            }
+        if let Err(e) = fetch_and_write_status(&config).await {
+            log::error!("Fetch failed: {}", e);
         }
-
-        sleep_until_next_cycle(interval_secs).await;
     }
+}
+
+pub async fn fetch_and_write_status(config: &Config) -> anyhow::Result<StatusSnapshot> {
+    let snapshot = fetch_all(config).await?;
+    output::write_status(&snapshot)?;
+    log::info!("Status updated at {}", snapshot.updated_at);
+    Ok(snapshot)
 }
 
 async fn sleep_until_next_cycle(initial_interval_secs: u64) {

@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     config::{Config, ProviderItem},
-    daemon::fetch_all,
+    daemon::fetch_and_write_status,
 };
 
 #[derive(Parser)]
@@ -125,8 +125,7 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Fetch => {
             let config = Config::load()?;
-            let snapshot = fetch_all(&config).await?;
-            output::write_status(&snapshot)?;
+            let snapshot = fetch_and_write_status(&config).await?;
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
         }
 

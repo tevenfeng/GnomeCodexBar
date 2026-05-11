@@ -110,10 +110,11 @@ fn enable_systemd() -> anyhow::Result<String> {
     }
     fs::write(&path, &content)?;
 
-    // Reload + enable + start
+    // Reload + enable + restart. Restart also refreshes an already-running
+    // daemon, which triggers its startup fetch immediately after re-enable.
     run_systemctl(&["--user", "daemon-reload"])?;
     run_systemctl(&["--user", "enable", SERVICE_NAME])?;
-    run_systemctl(&["--user", "start", SERVICE_NAME])?;
+    run_systemctl(&["--user", "restart", SERVICE_NAME])?;
 
     Ok(format!(
         "Auto-start enabled (systemd). Service file: {}",

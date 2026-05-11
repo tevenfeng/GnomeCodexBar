@@ -82,3 +82,17 @@ fn test_systemd_unit_uses_absolute_path() {
         }
     }
 }
+
+#[test]
+fn test_systemd_enable_restarts_service() {
+    let source = include_str!("../../src/autostart.rs");
+
+    assert!(
+        source.contains(r#"run_systemctl(&["--user", "restart", SERVICE_NAME])"#),
+        "enable_systemd should restart the user service so re-enabling an already-running daemon triggers a startup fetch"
+    );
+    assert!(
+        !source.contains(r#"run_systemctl(&["--user", "start", SERVICE_NAME])"#),
+        "enable_systemd should use restart instead of start"
+    );
+}
