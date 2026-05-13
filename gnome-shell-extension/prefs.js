@@ -5,6 +5,12 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import {ConfigManager} from './configManager.js';
 
+const PROVIDERS = [
+    ['deepseek', 'DeepSeek'],
+    ['stepfun', 'StepFun'],
+    ['opencodego', 'OpenCode Go'],
+];
+
 export default class CodexBarPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const cfg = new ConfigManager();
@@ -27,17 +33,22 @@ export default class CodexBarPreferences extends ExtensionPreferences {
         });
         const refreshErrorLabel = makeErrorLabel();
         const providerErrorLabel = makeErrorLabel();
+        const orderErrorLabel = makeErrorLabel();
         const showError = message => {
             refreshErrorLabel.label = message;
             refreshErrorLabel.visible = true;
             providerErrorLabel.label = message;
             providerErrorLabel.visible = true;
+            orderErrorLabel.label = message;
+            orderErrorLabel.visible = true;
         };
         const clearError = () => {
             refreshErrorLabel.label = '';
             refreshErrorLabel.visible = false;
             providerErrorLabel.label = '';
             providerErrorLabel.visible = false;
+            orderErrorLabel.label = '';
+            orderErrorLabel.visible = false;
         };
 
         // Refresh interval: read from config.toml, fallback to GSettings
@@ -130,5 +141,68 @@ export default class CodexBarPreferences extends ExtensionPreferences {
             }
         });
         provGrp.add(ocgRow);
+
+        const orderGrp = new Adw.PreferencesGroup({ title: _('Provider Order') });
+        provPage.add(orderGrp);
+
+        const orderErrorRow = new Adw.ActionRow({ visible: false });
+        orderErrorRow.add_suffix(orderErrorLabel);
+        orderGrp.add(orderErrorRow);
+        orderErrorLabel.bind_property('visible', orderErrorRow, 'visible', Gio.BindingFlags.SYNC_CREATE);
+
+        const providerNames = Object.fromEntries(PROVIDERS.map(([id, name]) => [id, name]));
+        const normalizeOrder = order => {
+            const known = new Set(PROVIDERS.map(([id]) => id));
+            const seen = new Set();
+            const normalized = [];
+            for (const id of order) {
+                if (known.has(id) && !seen.has(id)) {
+                    seen.add(id);
+                    normalized.push(id);
+                }
+            }
+            for (const [id] of PROVIDERS) {
+                if (!seen.has(id)) normalized.push(id);
+            }
+            return normalized;
+        };
+        let providerOrder = normalizeOrder(cfg.getProviderOrder());
+        let orderRows = [];
+        const renderOrderRows = () => {
+            for (const row of orderRows)
+                orderGrp.remove(row);
+            orderRows = [];
+
+            providerOrder.forEach((id, index) => {
+                const row = new Adw.ActionRow({ title: _(providerNames[id] || id) });
+                const upButton = new Gtk.Button({ icon_name: 'go-up-symbolic', sensitive: index > 0, valign: Gtk.Align.CENTER });
+                const downButton = new Gtk.Button({ icon_name: 'go-down-symbolic', sensitive: index < providerOrder.length - 1, valign: Gtk.Align.CENTER });
+                upButton.connect('clicked', () => {
+                    [providerOrder[index - 1], providerOrder[index]] = [providerOrder[index], providerOrder[index - 1]];
+                    if (!cfg.setProviderOrder(providerOrder)) {
+                        log('[codex-bar] Failed to save provider order');
+                        showError(_('Failed to save provider order.'));
+                    } else {
+                        clearError();
+                    }
+                    renderOrderRows();
+                });
+                downButton.connect('clicked', () => {
+                    [providerOrder[index], providerOrder[index + 1]] = [providerOrder[index + 1], providerOrder[index]];
+                    if (!cfg.setProviderOrder(providerOrder)) {
+                        log('[codex-bar] Failed to save provider order');
+                        showError(_('Failed to save provider order.'));
+                    } else {
+                        clearError();
+                    }
+                    renderOrderRows();
+                });
+                row.add_suffix(upButton);
+                row.add_suffix(downButton);
+                orderGrp.add(row);
+                orderRows.push(row);
+            });
+        };
+        renderOrderRows();
     }
 }

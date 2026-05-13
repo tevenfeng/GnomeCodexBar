@@ -8,6 +8,7 @@ class StatusReader: ObservableObject {
     @Published var status: StatusSnapshot?
     @Published var selectedProvider: String?
     @Published var pollInterval: Double
+    @Published private(set) var providerOrder: [String]
     @Published private var providerEnabled: [String: Bool]
 
     private var fileSource: DispatchSourceFileSystemObject?
@@ -29,6 +30,7 @@ class StatusReader: ObservableObject {
         self.configPath = dataDir.appendingPathComponent("config.toml")
 
         self.pollInterval = 300
+        self.providerOrder = Self.defaultProviderOrder
         self.providerEnabled = [:]
 
         readCliSettings()
@@ -91,6 +93,10 @@ class StatusReader: ObservableObject {
             pollInterval = seconds
         }
 
+        providerOrder = normalizedProviderOrder(
+            tomlStringArray(forKey: "provider_order", inSection: "general", content: content) ?? Self.defaultProviderOrder
+        )
+
         for id in ["deepseek", "stepfun", "opencodego"] {
             if let value = tomlValue(forKey: "enabled", inSection: "providers.\(id)", content: content),
                let enabled = tomlBool(value) {
@@ -112,6 +118,17 @@ class StatusReader: ObservableObject {
         restartPollTimer()
     }
 
+    func setProviderOrder(_ order: [String]) {
+        providerOrder = normalizedProviderOrder(order)
+        updateConfigValue(
+            section: "general",
+            key: "provider_order",
+            value: tomlStringArray(providerOrder)
+        )
+    }
+
+    private static let defaultProviderOrder = ["deepseek", "stepfun", "opencodego"]
+
     private func defaultConfigText() -> String {
         """
         [providers.deepseek]
@@ -126,6 +143,7 @@ class StatusReader: ObservableObject {
         [general]
         refresh_interval_secs = 300
         selected_provider = "deepseek"
+        provider_order = ["deepseek", "stepfun", "opencodego"]
         """
     }
 
@@ -144,6 +162,70 @@ class StatusReader: ObservableObject {
                 let rawValue = String(line[line.index(after: equalsIndex)...])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return decodeTomlBasicString(rawValue) ?? rawValue
+            }
+        }
+        return nil
+    }
+
+    private func tomlStringArray(forKey key: String, inSection section: String, content: String) -> [String]? {
+        guard let rawValue = rawTomlValue(forKey: key, inSection: section, content: content),
+              rawValue.hasPrefix("["), rawValue.hasSuffix("]") else {
+            return nil
+        }
+
+        let inner = rawValue.dropFirst().dropLast()
+        var values: [String] = []
+        var current = ""
+        var inString = false
+        var escaped = false
+
+        for char in inner {
+            if inString {
+                current.append(char)
+                if escaped {
+                    escaped = false
+                } else if char == "\\" {
+                    escaped = true
+                } else if char == "\"" {
+                    inString = false
+                }
+                continue
+            }
+
+            if char == "\"" {
+                inString = true
+                current.append(char)
+            } else if char == "," {
+                if let value = decodeTomlBasicString(current.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    values.append(value)
+                }
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+
+        if let value = decodeTomlBasicString(current.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            values.append(value)
+        }
+
+        return values
+    }
+
+    private func rawTomlValue(forKey key: String, inSection section: String, content: String) -> String? {
+        var currentSection: String?
+        for rawLine in content.components(separatedBy: .newlines) {
+            let line = stripTomlInlineComment(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") && line.hasSuffix("]") {
+                currentSection = String(line.dropFirst().dropLast())
+                continue
+            }
+            guard currentSection == section else { continue }
+            guard let equalsIndex = line.firstIndex(of: "=") else { continue }
+            let lineKey = String(line[..<equalsIndex]).trimmingCharacters(in: .whitespaces)
+            if lineKey == key {
+                return String(line[line.index(after: equalsIndex)...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         return nil
@@ -215,6 +297,26 @@ class StatusReader: ObservableObject {
             result.append("\\")
         }
         return result
+    }
+
+    private func encodeTomlBasicString(_ value: String) -> String {
+        var result = "\""
+        for char in value {
+            switch char {
+            case "\\": result += "\\\\"
+            case "\"": result += "\\\""
+            case "\n": result += "\\n"
+            case "\t": result += "\\t"
+            case "\r": result += "\\r"
+            default: result.append(char)
+            }
+        }
+        result += "\""
+        return result
+    }
+
+    private func tomlStringArray(_ values: [String]) -> String {
+        "[" + values.map { encodeTomlBasicString($0) }.joined(separator: ", ") + "]"
     }
 
     private func updateConfigValue(section: String, key: String, value: String) {
@@ -297,7 +399,7 @@ class StatusReader: ObservableObject {
         var sectionEnd = lines.count
 
         for (index, rawLine) in lines.enumerated() {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            let line = stripTomlInlineComment(rawLine).trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("[") && line.hasSuffix("]") {
                 let name = String(line.dropFirst().dropLast())
                 if name == section {
@@ -312,8 +414,10 @@ class StatusReader: ObservableObject {
 
         if let start = sectionStart {
             for index in (start + 1)..<sectionEnd {
-                let line = lines[index].trimmingCharacters(in: .whitespaces)
-                if line.hasPrefix("\(key) =") {
+                let line = stripTomlInlineComment(lines[index]).trimmingCharacters(in: .whitespaces)
+                guard let equalsIndex = line.firstIndex(of: "=") else { continue }
+                let lineKey = String(line[..<equalsIndex]).trimmingCharacters(in: .whitespaces)
+                if lineKey == key {
                     lines[index] = "\(key) = \(value)"
                     return lines.joined(separator: "\n") + "\n"
                 }
@@ -381,7 +485,7 @@ class StatusReader: ObservableObject {
 
     /// All provider IDs known from status data
     var allProviderIDs: [String] {
-        status?.providers.map { $0.providerId } ?? ["deepseek", "stepfun", "opencodego"]
+        sortedProviderIDs(status?.providers.map { $0.providerId } ?? Self.defaultProviderOrder)
     }
 
     /// Display name for a provider ID
@@ -415,7 +519,42 @@ class StatusReader: ObservableObject {
     /// Providers filtered by enabled state
     var enabledProviders: [ProviderStatus] {
         guard let s = status else { return [] }
-        return s.providers.filter { isProviderEnabled($0.providerId) }
+        return sortProviders(s.providers.filter { isProviderEnabled($0.providerId) })
+    }
+
+    private func normalizedProviderOrder(_ order: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+
+        for id in order where !seen.contains(id) {
+            seen.insert(id)
+            result.append(id)
+        }
+        for id in Self.defaultProviderOrder where !seen.contains(id) {
+            seen.insert(id)
+            result.append(id)
+        }
+        return result
+    }
+
+    private func sortedProviderIDs(_ ids: [String]) -> [String] {
+        let rank = Dictionary(uniqueKeysWithValues: providerOrder.enumerated().map { ($0.element, $0.offset) })
+        return ids.enumerated().sorted { lhs, rhs in
+            let leftRank = rank[lhs.element] ?? Int.max
+            let rightRank = rank[rhs.element] ?? Int.max
+            if leftRank != rightRank { return leftRank < rightRank }
+            return lhs.offset < rhs.offset
+        }.map { $0.element }
+    }
+
+    private func sortProviders(_ providers: [ProviderStatus]) -> [ProviderStatus] {
+        let rank = Dictionary(uniqueKeysWithValues: providerOrder.enumerated().map { ($0.element, $0.offset) })
+        return providers.enumerated().sorted { lhs, rhs in
+            let leftRank = rank[lhs.element.providerId] ?? Int.max
+            let rightRank = rank[rhs.element.providerId] ?? Int.max
+            if leftRank != rightRank { return leftRank < rightRank }
+            return lhs.offset < rhs.offset
+        }.map { $0.element }
     }
 
     // ── Helpers ───────────────────────────────────────

@@ -1,5 +1,5 @@
 // configManager.js — lightweight line-level TOML reader/writer
-// Reads/writes only [general].refresh_interval_secs and [providers.X].enabled
+// Reads/writes only [general].refresh_interval_secs/provider_order and [providers.X].enabled
 // All other TOML content is preserved verbatim.
 
 import GLib from 'gi://GLib';
@@ -7,6 +7,7 @@ import Gio from 'gi://Gio';
 
 const CFG_DIR = GLib.build_filenamev([GLib.get_user_data_dir(), 'gnome-codex-bar']);
 const CFG_PATH = GLib.build_filenamev([CFG_DIR, 'config.toml']);
+const DEFAULT_PROVIDER_ORDER = ['deepseek', 'stepfun', 'opencodego'];
 
 function _readLines() {
     const file = Gio.File.new_for_path(CFG_PATH);
@@ -127,6 +128,79 @@ function _readBool(lines, section, key) {
     return null;
 }
 
+function _decodeTomlString(value) {
+    value = value.trim();
+    if (value.startsWith('"') && value.endsWith('"')) {
+        try {
+            return JSON.parse(value);
+        } catch (e) {
+            return value.slice(1, -1);
+        }
+    }
+    if (value.startsWith("'") && value.endsWith("'"))
+        return value.slice(1, -1);
+    return null;
+}
+
+function _readStringArray(lines, section, key) {
+    const si = _findSection(lines, section);
+    if (si < 0) return null;
+    const ei = _sectionEnd(lines, si);
+    const ki = _findKey(lines, key, si, ei);
+    if (ki < 0) return null;
+    const line = lines[ki].trim();
+    const eqIdx = line.indexOf('=');
+    if (eqIdx < 0) return null;
+    const val = _stripInlineComment(line.substring(eqIdx + 1)).trim();
+    if (!val.startsWith('[') || !val.endsWith(']')) return null;
+
+    const result = [];
+    const inner = val.slice(1, -1);
+    let quote = null;
+    let escaped = false;
+    let part = '';
+    for (const ch of inner) {
+        if (escaped) {
+            part += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\' && quote === '"') {
+            part += ch;
+            escaped = true;
+            continue;
+        }
+        if ((ch === '"' || ch === "'") && quote === null) {
+            quote = ch;
+            part += ch;
+            continue;
+        }
+        if (ch === quote) {
+            quote = null;
+            part += ch;
+            continue;
+        }
+        if (ch === ',' && quote === null) {
+            const decoded = _decodeTomlString(part);
+            if (decoded !== null) result.push(decoded);
+            part = '';
+            continue;
+        }
+        part += ch;
+    }
+    const decoded = _decodeTomlString(part);
+    if (decoded !== null) result.push(decoded);
+    return result;
+}
+
+function _tomlString(value) {
+    return JSON.stringify(String(value));
+}
+
+function _tomlStringArray(values) {
+    return `[${values.map(_tomlString).join(', ')}]`;
+}
+
 // Write a key=value (int or bool) into a section, preserving all other content
 function _writeKey(lines, section, key, value, quoted = false) {
     const valStr = quoted ? `"${String(value)}"` : String(value);
@@ -181,6 +255,17 @@ export class ConfigManager {
         return _writeLines(this._lines);
     }
 
+    getProviderOrder() {
+        if (!this._lines) return [...DEFAULT_PROVIDER_ORDER];
+        return _readStringArray(this._lines, 'general', 'provider_order') || [...DEFAULT_PROVIDER_ORDER];
+    }
+
+    setProviderOrder(order) {
+        if (!this._lines) this._lines = [];
+        _writeKey(this._lines, 'general', 'provider_order', _tomlStringArray(order));
+        return _writeLines(this._lines);
+    }
+
     isProviderEnabled(providerId) {
         if (!this._lines) return true; // default: enabled
         const v = _readBool(this._lines, 'providers.' + providerId, 'enabled');
@@ -222,6 +307,7 @@ export class ConfigManager {
                 '[general]',
                 'refresh_interval_secs = 300',
                 'selected_provider = "deepseek"',
+                'provider_order = ["deepseek", "stepfun", "opencodego"]',
                 '',
             ];
             _writeLines(defaults);

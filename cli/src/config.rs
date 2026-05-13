@@ -31,7 +31,7 @@ pub struct ProviderItem {
     pub workspace_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
     #[serde(default = "default_refresh_interval")]
     pub refresh_interval_secs: u64,
@@ -39,6 +39,8 @@ pub struct GeneralConfig {
     pub budget_monthly: Option<f64>,
     #[serde(default = "default_selected_provider")]
     pub selected_provider: String,
+    #[serde(default = "default_provider_order")]
+    pub provider_order: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -50,11 +52,25 @@ fn default_refresh_interval() -> u64 {
 fn default_selected_provider() -> String {
     "deepseek".into()
 }
+fn default_provider_order() -> Vec<String> {
+    vec!["deepseek".into(), "stepfun".into(), "opencodego".into()]
+}
 
 impl GeneralConfig {
     pub fn refresh_interval_secs_clamped(&self) -> u64 {
         self.refresh_interval_secs
             .clamp(MIN_REFRESH_INTERVAL_SECS, MAX_REFRESH_INTERVAL_SECS)
+    }
+}
+
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            refresh_interval_secs: default_refresh_interval(),
+            budget_monthly: None,
+            selected_provider: default_selected_provider(),
+            provider_order: default_provider_order(),
+        }
     }
 }
 
@@ -96,11 +112,7 @@ impl Default for Config {
                     },
                 ),
             ]),
-            general: GeneralConfig {
-                refresh_interval_secs: 300,
-                budget_monthly: None,
-                selected_provider: "deepseek".into(),
-            },
+            general: GeneralConfig::default(),
         }
     }
 }

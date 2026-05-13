@@ -324,10 +324,24 @@ export default class CodexBarExtension extends Extension {
         if (!s?.providers) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.err};`; this._lb.text='--'; return; }
         // Filter by enabled providers
         const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
-        const active = s.providers.filter(p => enabled[p.provider_id] !== false);
+        const active = this._sortProviders(s.providers.filter(p => enabled[p.provider_id] !== false));
         if (active.length === 0) { this._sn.text=''; this._ic.style=`font-size:10px; margin-right:4px; color:${c.faint};`; this._lb.text='--'; return; }
         const pr = active.find(x => x.provider_id === sel) || active[0];
         this._showBtn(pr, sel);
+    }
+
+    _sortProviders(providers) {
+        const order = this._cfg?.getProviderOrder?.() || [];
+        const rank = new Map(order.map((id, index) => [id, index]));
+        return providers
+            .map((provider, index) => ({ provider, index }))
+            .sort((a, b) => {
+                const ar = rank.has(a.provider.provider_id) ? rank.get(a.provider.provider_id) : Number.MAX_SAFE_INTEGER;
+                const br = rank.has(b.provider.provider_id) ? rank.get(b.provider.provider_id) : Number.MAX_SAFE_INTEGER;
+                if (ar !== br) return ar - br;
+                return a.index - b.index;
+            })
+            .map(item => item.provider);
     }
 
     _hidePopup() {
@@ -410,7 +424,7 @@ export default class CodexBarExtension extends Extension {
             r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
         } else {
             const enabled = this._cfg?.getProviderEnabledMap() || { deepseek: true, stepfun: true };
-            const providers = s.providers.filter(p => enabled[p.provider_id] !== false);
+            const providers = this._sortProviders(s.providers.filter(p => enabled[p.provider_id] !== false));
             if (providers.length === 0) {
                 r.add_child(new St.Label({ text:'No providers enabled.\nEnable providers in extension settings.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
             } else {
