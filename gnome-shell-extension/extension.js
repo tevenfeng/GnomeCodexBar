@@ -57,6 +57,11 @@ const C = {
 
 export default class CodexBarExtension extends Extension {
     enable() {
+        this._refreshing = false;
+        this._refreshError = null;
+        this._refreshTimeout = null;
+        this._refreshProc = null;
+
         this._ifaceSettings = Gio.Settings.new('org.gnome.desktop.interface');
         const onTheme = () => {
             if (this._popup?.visible) {
@@ -164,6 +169,8 @@ export default class CodexBarExtension extends Extension {
 
     disable() {
         if (this._t) GLib.Source.remove(this._t);
+        if (this._refreshTimeout) { GLib.Source.remove(this._refreshTimeout); this._refreshTimeout = null; }
+        if (this._refreshProc) { this._refreshProc.force_exit(); this._refreshProc = null; }
         if (this._m) this._m.cancel();
         if (this._cfg) { this._cfg.destroy(); this._cfg = null; }
         if (this._themeSig) { this._ifaceSettings.disconnect(this._themeSig); this._themeSig = null; }
@@ -240,6 +247,74 @@ export default class CodexBarExtension extends Extension {
         if (this._t) { GLib.Source.remove(this._t); this._t = null; }
         this._currIv = seconds;
         this._t = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => { this._updatePanel(); return GLib.SOURCE_CONTINUE; });
+    }
+
+    _refreshCandidates() {
+        const home = GLib.get_home_dir();
+        return [
+            [`${home}/.local/bin/codex-bar-cli`, 'fetch'],
+            ['/usr/local/bin/codex-bar-cli', 'fetch'],
+            ['/usr/bin/codex-bar-cli', 'fetch'],
+            ['codex-bar-cli', 'fetch'],
+        ];
+    }
+
+    _setRefreshDone(error) {
+        if (this._refreshTimeout) {
+            GLib.Source.remove(this._refreshTimeout);
+            this._refreshTimeout = null;
+        }
+        this._refreshing = false;
+        this._refreshProc = null;
+        this._refreshError = error;
+        if (error) console.error(`Codex Bar refresh failed: ${error}`);
+        this._updatePanel();
+        if (this._popup?.visible) this._show();
+    }
+
+    _runRefreshCandidate(candidates, index) {
+        if (index >= candidates.length) {
+            this._setRefreshDone('codex-bar-cli not found');
+            return;
+        }
+
+        let proc;
+        try {
+            proc = Gio.Subprocess.new(candidates[index], Gio.SubprocessFlags.NONE);
+        } catch (e) {
+            this._runRefreshCandidate(candidates, index + 1);
+            return;
+        }
+
+        this._refreshProc = proc;
+        this._refreshTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30000, () => {
+            if (this._refreshProc === proc) {
+                proc.force_exit();
+                this._setRefreshDone('Refresh timed out');
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+
+        proc.wait_async(null, (p, res) => {
+            if (this._refreshProc !== p) return;
+            let ok = false;
+            try {
+                ok = p.wait_finish(res) && p.get_successful();
+            } catch (e) {
+                this._setRefreshDone(e.message || String(e));
+                return;
+            }
+            this._setRefreshDone(ok ? null : `Refresh failed (exit ${p.get_exit_status()})`);
+        });
+    }
+
+    _refreshNow() {
+        if (this._refreshing) return;
+        this._refreshing = true;
+        this._refreshError = null;
+        this._updatePanel();
+        if (this._popup?.visible) this._show();
+        this._runRefreshCandidate(this._refreshCandidates(), 0);
     }
 
     _updatePanel() {
@@ -319,18 +394,17 @@ export default class CodexBarExtension extends Extension {
         // Title row: "Codex Bar" + refresh button
         const titleRow = new St.BoxLayout({ style: 'margin-bottom:8px;' });
         titleRow.add_child(new St.Label({ text:'Codex Bar', style_class:'codex-bar-title', x_expand:true }));
-        const refBtn = new St.Button({ label:'\u21BB', style_class:'codex-bar-refresh-btn', style:`color:${c.faint}; font-size:14px; padding:2px 6px; border-radius:4px;` });
+        const refBtn = new St.Button({ label:this._refreshing ? '…' : '\u21BB', reactive:!this._refreshing, style_class:'codex-bar-refresh-btn', style:`color:${this._refreshing ? c.muted : c.faint}; font-size:14px; padding:2px 6px; border-radius:4px;` });
         refBtn.connect('button-press-event', () => {
-            try { GLib.spawn_command_line_async('codex-bar-cli fetch'); } catch(e) {}
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-                this._updatePanel();
-                if (this._popup?.visible) this._show();
-                return GLib.SOURCE_REMOVE;
-            });
+            this._refreshNow();
             return Clutter.EVENT_STOP;
         });
         titleRow.add_child(refBtn);
         r.add_child(titleRow);
+
+        if (this._refreshError) {
+            r.add_child(new St.Label({ text:this._refreshError, style:`font-size:11px; color:${c.err}; margin-bottom:8px;` }));
+        }
 
         if (!s?.providers) {
             r.add_child(new St.Label({ text:'No data.\nRun "codex-bar-cli daemon" first.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
@@ -340,11 +414,12 @@ export default class CodexBarExtension extends Extension {
             if (providers.length === 0) {
                 r.add_child(new St.Label({ text:'No providers enabled.\nEnable providers in extension settings.', style:`font-size:12px; color:${c.muted}; padding:8px 0;` }));
             } else {
+                const effectiveSel = providers.find(p => p.provider_id === sel)?.provider_id || providers[0]?.provider_id;
                 for (let i = 0; i < providers.length; i++) {
                     if (i > 0) {
                         r.add_child(new St.Widget({ style: `height:1px; background-color:${c.divider}; margin:8px 0;` }));
                     }
-                    this._addProviderSection(r, providers[i], sel, s.updated_at);
+                    this._addProviderSection(r, providers[i], effectiveSel, s.updated_at);
                 }
             }
         }
@@ -408,7 +483,7 @@ export default class CodexBarExtension extends Extension {
             // Balance bar
             const hasBalance = (+d.total_balance || 0) > 0;
             const pct = hasBalance ? 100 : 0;
-            this._addBar(sec, 'Balance', pct, null);
+            this._addBar(sec, 'Balance Available', pct, null, hasBalance ? 'Balance remains' : 'No balance');
 
             // Balance detail text
             const cu = d.currency || 'CNY', s = cu === 'USD' ? '$' : '\u00A5';
@@ -416,7 +491,7 @@ export default class CodexBarExtension extends Extension {
             const paid = +d.topped_up_balance || 0;
             const granted = +d.granted_balance || 0;
             sec.add_child(new St.Label({
-                text: `${s}${total.toFixed(2)} (Paid: ${s}${paid.toFixed(2)} / Granted: ${s}${granted.toFixed(2)})`,
+                text: `Progress shows balance existence, not quota ratio. ${s}${total.toFixed(2)} (Paid: ${s}${paid.toFixed(2)} / Granted: ${s}${granted.toFixed(2)})`,
                 style: `font-size:11px; color:${c.muted}; margin-top:4px;`
             }));
         } else {
@@ -436,7 +511,7 @@ export default class CodexBarExtension extends Extension {
         }
     }
 
-    _addBar(parent, title, pct, resetTime) {
+    _addBar(parent, title, pct, resetTime, infoText = null) {
         const c = this._c();
         const box = new St.BoxLayout({ vertical: true, style: 'margin-top:10px;' });
 
@@ -457,7 +532,7 @@ export default class CodexBarExtension extends Extension {
 
         // Info row: "X% left" left + "Resets in X" right
         const infoRow = new St.BoxLayout({ x_expand: true });
-        infoRow.add_child(new St.Label({ text: `${pct}% left`, style: `font-size:12px; color:${c.dim};` }));
+        infoRow.add_child(new St.Label({ text: infoText || `${pct}% left`, style: `font-size:12px; color:${c.dim};` }));
         infoRow.add_child(new St.Widget({ x_expand: true }));
         const resetStr = this._resetIn(resetTime);
         if (resetStr) {

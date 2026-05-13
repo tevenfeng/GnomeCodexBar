@@ -82,6 +82,7 @@ fn systemd_service_path() -> PathBuf {
 
 fn systemd_unit_content() -> anyhow::Result<String> {
     let bin = cli_bin_path()?;
+    let escaped_bin = systemd_escape_exec_arg(&bin);
     Ok(format!(
         "[Unit]\n\
          Description=CodexBar CLI Daemon - Monitor coding plan usage\n\
@@ -96,8 +97,37 @@ fn systemd_unit_content() -> anyhow::Result<String> {
          \n\
          [Install]\n\
          WantedBy=default.target\n",
-        bin = bin,
+        bin = escaped_bin,
     ))
+}
+
+fn systemd_escape_exec_arg(arg: &str) -> String {
+    let needs_quotes = arg.chars().any(|c| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '\\' | '"' | '\'' | ';' | '&' | '<' | '>' | '|' | '$' | '`' | '%'
+            )
+    });
+
+    if !needs_quotes {
+        return arg.to_string();
+    }
+
+    let mut escaped = String::with_capacity(arg.len() + 2);
+    escaped.push('"');
+    for ch in arg.chars() {
+        match ch {
+            '\\' | '"' | '$' | '`' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            '%' => escaped.push_str("%%"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn enable_systemd() -> anyhow::Result<String> {
@@ -226,9 +256,18 @@ fn launchd_plist_content() -> anyhow::Result<String> {
          </dict>\n\
          </plist>\n",
         label = LAUNCHD_LABEL,
-        bin = bin,
-        log_dir = log_dir.display(),
+        bin = xml_escape(&bin),
+        log_dir = xml_escape(&log_dir.display().to_string()),
     ))
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 fn enable_launchd() -> anyhow::Result<String> {

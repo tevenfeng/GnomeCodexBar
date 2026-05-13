@@ -1,10 +1,13 @@
 import SwiftUI
+import Darwin
 
 /// Main popover content: title + provider cards + refresh/options buttons
 struct PopoverContent: View {
     @ObservedObject var reader: StatusReader
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openWindow) private var openWindow
+    @State private var isRefreshing = false
+    @State private var refreshError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -15,9 +18,9 @@ struct PopoverContent: View {
                     .foregroundColor(colorScheme == .dark ? .white : Color(red: 0.1, green: 0.1, blue: 0.1))
                 Spacer()
                 Button(action: refresh) {
-                    Text("↻")
+                    Text(isRefreshing ? "…" : "↻")
                         .font(.system(size: 16))
-                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(isRefreshing ? 0.7 : 0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
@@ -26,6 +29,7 @@ struct PopoverContent: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .disabled(isRefreshing)
 
                 Menu {
                     Button("Settings...") {
@@ -51,10 +55,17 @@ struct PopoverContent: View {
             }
             .padding(.bottom, 8)
 
+            if let refreshError {
+                Text(refreshError)
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.2))
+                    .padding(.bottom, 8)
+            }
+
             // ── Provider cards (stacked) ──────────
             let enabledProviders = reader.enabledProviders
             if !enabledProviders.isEmpty {
-                let sel = reader.selectedProvider
+                let effectiveSelected = reader.activeProvider?.providerId
                 ForEach(Array(enabledProviders.enumerated()), id: \.element.id) { index, provider in
                     if index > 0 {
                         Rectangle()
@@ -64,7 +75,7 @@ struct PopoverContent: View {
                     }
                     ProviderCardView(
                         provider: provider,
-                        isSelected: provider.providerId == sel,
+                        isSelected: provider.providerId == effectiveSelected,
                         updatedAt: reader.status?.updatedAt,
                         onSelect: {
                             reader.writeSelectedProvider(provider.providerId)
@@ -73,7 +84,9 @@ struct PopoverContent: View {
                     )
                 }
             } else {
-                Text("No data.\nRun \"codex-bar-cli daemon\" first.")
+                Text(reader.status == nil
+                     ? "No data.\nRun \"codex-bar-cli daemon\" first."
+                     : "No providers enabled.\nEnable providers in Settings.")
                     .font(.system(size: 12))
                     .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.6) : Color(red: 0.4, green: 0.4, blue: 0.4))
                     .padding(.vertical, 8)
@@ -91,18 +104,66 @@ struct PopoverContent: View {
     }
 
     private func refresh() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let task = Process()
-            task.executableURL = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".local/bin/codex-bar-cli")
-            task.arguments = ["fetch"]
-            try? task.run()
-            task.waitUntilExit()
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        refreshError = nil
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                reader.readStatus()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let error = runRefreshCommand()
+
+            DispatchQueue.main.async {
+                isRefreshing = false
+                if let error {
+                    refreshError = error
+                    reader.readStatus()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        reader.readStatus()
+                    }
+                }
             }
         }
+    }
+
+    private func runRefreshCommand() -> String? {
+        let candidates: [(URL, [String])] = [
+            (FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/codex-bar-cli"), ["fetch"]),
+            (URL(fileURLWithPath: "/opt/homebrew/bin/codex-bar-cli"), ["fetch"]),
+            (URL(fileURLWithPath: "/usr/local/bin/codex-bar-cli"), ["fetch"]),
+            (URL(fileURLWithPath: "/usr/bin/env"), ["codex-bar-cli", "fetch"]),
+        ]
+        let timeout: TimeInterval = 30
+
+        for (executable, arguments) in candidates {
+            let task = Process()
+            task.executableURL = executable
+            task.arguments = arguments
+            let semaphore = DispatchSemaphore(value: 0)
+            task.terminationHandler = { _ in semaphore.signal() }
+
+            do {
+                try task.run()
+            } catch {
+                continue
+            }
+
+            let timedOut = semaphore.wait(timeout: .now() + timeout) == .timedOut
+            if timedOut {
+                task.terminate()
+                Thread.sleep(forTimeInterval: 1)
+                if task.isRunning {
+                    kill(task.processIdentifier, SIGKILL)
+                }
+                return "Refresh timed out"
+            }
+
+            if task.terminationStatus == 0 {
+                return nil
+            }
+            return "Refresh failed (exit \(task.terminationStatus))"
+        }
+
+        return "codex-bar-cli not found"
     }
 
     private func openSettings() {

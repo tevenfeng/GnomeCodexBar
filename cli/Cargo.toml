@@ -2,7 +2,7 @@
 name = "codex-bar-cli"
 version = "0.1.0"
 edition = "2021"
-description = "CLI tool to monitor DeepSeek and StepFun coding plan usage"
+description = "CLI daemon for GNOME and macOS menu bar monitoring of DeepSeek, StepFun, and OpenCode Go coding plan usage"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

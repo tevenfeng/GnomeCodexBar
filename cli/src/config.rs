@@ -1,6 +1,11 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
+use crate::atomic_write::atomic_write;
+
 use serde::{Deserialize, Serialize};
+
+pub const MIN_REFRESH_INTERVAL_SECS: u64 = 30;
+pub const MAX_REFRESH_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -24,11 +29,6 @@ pub struct ProviderItem {
     pub cookie_header: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-    // StepFun token cache
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached_token: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached_ingress_cookie: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -51,6 +51,13 @@ fn default_selected_provider() -> String {
     "deepseek".into()
 }
 
+impl GeneralConfig {
+    pub fn refresh_interval_secs_clamped(&self) -> u64 {
+        self.refresh_interval_secs
+            .clamp(MIN_REFRESH_INTERVAL_SECS, MAX_REFRESH_INTERVAL_SECS)
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -64,8 +71,6 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
-                        cached_token: None,
-                        cached_ingress_cookie: None,
                     },
                 ),
                 (
@@ -77,8 +82,6 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
-                        cached_token: None,
-                        cached_ingress_cookie: None,
                     },
                 ),
                 (
@@ -90,8 +93,6 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
-                        cached_token: None,
-                        cached_ingress_cookie: None,
                     },
                 ),
             ]),
@@ -105,6 +106,11 @@ impl Default for Config {
 }
 
 impl Config {
+    fn clamp_refresh_interval(mut self) -> Self {
+        self.general.refresh_interval_secs = self.general.refresh_interval_secs_clamped();
+        self
+    }
+
     /// Load config from the data directory (same dir as status.json).
     /// Creates with defaults if file doesn't exist.
     /// Migrates from the old config directory if the old file exists but the new one doesn't.
@@ -121,20 +127,36 @@ impl Config {
                 if let Some(parent) = path.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
-                let _: Result<(), std::io::Error> = fs::rename(&old_path, &path).or_else(|_| {
-                    // Fall back to copy+delete if cross-device
+                let migration_result: Result<(), std::io::Error> = (|| {
                     let content = fs::read_to_string(&old_path)?;
-                    fs::write(&path, &content)?;
-                    let _ = fs::remove_file(&old_path);
+                    atomic_write(&path, content)?;
+                    if let Err(e) = fs::remove_file(&old_path) {
+                        restrict_file_permissions(&old_path);
+                        log::warn!(
+                            "Migrated config to {}, but failed to remove old config {}: {}",
+                            path.display(),
+                            old_path.display(),
+                            e
+                        );
+                    }
                     Ok(())
-                });
+                })();
+                if let Err(e) = migration_result {
+                    log::warn!(
+                        "Failed to migrate config from {} to {}: {}",
+                        old_path.display(),
+                        path.display(),
+                        e
+                    );
+                }
             }
         }
 
         if path.exists() {
+            restrict_file_permissions(&path);
             let content = fs::read_to_string(&path)?;
             let config: Config = toml::from_str(&content)?;
-            Ok(config)
+            Ok(config.clamp_refresh_interval())
         } else {
             let config = Config::default();
             config.save()?;
@@ -148,15 +170,8 @@ impl Config {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self)?;
-        fs::write(&path, content)?;
-        // config.toml may contain credentials (API keys, passwords, cookies).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = fs::Permissions::from_mode(0o600);
-            let _ = fs::set_permissions(&path, perms);
-        }
+        let content = toml::to_string_pretty(&self.clone().clamp_refresh_interval())?;
+        atomic_write(&path, content)?;
         Ok(())
     }
 
@@ -206,6 +221,22 @@ pub fn status_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("gnome-codex-bar")
 }
+
+#[cfg(unix)]
+fn restrict_file_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    if let Err(e) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
+        log::warn!(
+            "Failed to set private permissions on {}: {}",
+            path.display(),
+            e
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn restrict_file_permissions(_path: &std::path::Path) {}
 
 #[cfg(test)]
 #[path = "../tests/unit/config.rs"]

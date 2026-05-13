@@ -1,9 +1,8 @@
 {
   "name": "Codex Bar",
-  "description": "Monitor DeepSeek & StepFun coding plan usage in GNOME panel",
+  "description": "Monitor DeepSeek, StepFun, and OpenCode Go coding plan usage in the GNOME panel",
   "uuid": "codex-bar@gnome",
   "settings-schema": "org.gnome.shell.extensions.codex-bar",
   "shell-version": ["45", "46", "47", "48"],
-  "url": "https://github.com/user/gnome-codex-bar",
   "version": 1
 }

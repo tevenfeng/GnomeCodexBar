@@ -18,7 +18,7 @@ echo ""
 # Step 1: Build and install CLI
 echo "[1/4] Building Rust CLI..."
 cd "$CLI_DIR"
-cargo build --release 2>&1 | tail -3
+cargo build --release
 
 echo "      Installing CLI to $BIN_DIR..."
 if [ ! -w "$BIN_DIR" ] && [ "$(id -u)" -ne 0 ]; then
@@ -36,7 +36,7 @@ fi
 echo ""
 echo "[2/4] Building CodexBar menu bar app..."
 cd "$MACOS_BAR_DIR"
-swift build -c release 2>&1 | tail -3
+swift build -c release
 
 # Step 3: Install menu bar app as .app bundle
 echo ""

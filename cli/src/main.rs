@@ -1,3 +1,4 @@
+mod atomic_write;
 mod autostart;
 mod config;
 mod daemon;
@@ -96,8 +97,6 @@ async fn main() -> anyhow::Result<()> {
                     password: None,
                     cookie_header: None,
                     workspace_id: None,
-                    cached_token: None,
-                    cached_ingress_cookie: None,
                 });
 
             if let Some(key) = api_key {

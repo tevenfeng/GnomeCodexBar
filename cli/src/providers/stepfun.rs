@@ -1,10 +1,16 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use chrono::{DateTime, TimeZone, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Provider, ProviderConfig, ProviderStatus};
+use crate::atomic_write::atomic_write;
+
+use super::{
+    sanitize_error_message, sanitize_response_excerpt, sanitized_http_error_message,
+    sanitized_parse_error_message, Provider, ProviderConfig, ProviderStatus,
+    HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
+};
 
 // ── Constants (matching C++ stepfun-monitor) ────────────
 const WEB_ID: &str = "c8a1002d2c457e758785a9979832217c7c0b884c";
@@ -27,6 +33,98 @@ impl StepFunProvider {
         Self
     }
 }
+
+// ── Token cache ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct StepFunTokenCache {
+    token: String,
+    updated_at: String,
+}
+
+fn stepfun_cache_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("gnome-codex-bar")
+        .join("stepfun-cache.toml")
+}
+
+fn read_token_cache() -> Option<StepFunTokenCache> {
+    read_token_cache_from_path(&stepfun_cache_path())
+}
+
+fn write_token_cache(token: &str) {
+    let cache = StepFunTokenCache {
+        token: token.to_string(),
+        updated_at: Utc::now().to_rfc3339(),
+    };
+
+    if let Err(e) = write_token_cache_to_path(&stepfun_cache_path(), &cache) {
+        log::warn!(
+            "StepFun token cache write failed: {}",
+            sanitize_error_message(&e.to_string())
+        );
+    }
+}
+
+fn clear_token_cache() {
+    let path = stepfun_cache_path();
+    if let Err(e) = std::fs::remove_file(&path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            log::debug!("StepFun token cache cleanup failed: {}", e);
+        }
+    }
+}
+
+fn read_token_cache_from_path(path: &std::path::Path) -> Option<StepFunTokenCache> {
+    tighten_cache_permissions(path);
+
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            log::debug!("StepFun token cache read failed: {}", e);
+            return None;
+        }
+    };
+
+    let cache = match toml::from_str::<StepFunTokenCache>(&contents) {
+        Ok(cache) if !cache.token.trim().is_empty() => cache,
+        Ok(_) => return None,
+        Err(e) => {
+            log::debug!("StepFun token cache parse failed: {}", e);
+            return None;
+        }
+    };
+
+    tighten_cache_permissions(path);
+    Some(cache)
+}
+
+fn write_token_cache_to_path(
+    path: &std::path::Path,
+    cache: &StepFunTokenCache,
+) -> Result<(), anyhow::Error> {
+    let contents = toml::to_string(cache)?;
+    atomic_write(path, contents)?;
+    tighten_cache_permissions(path);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn tighten_cache_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    if let Ok(metadata) = std::fs::metadata(path) {
+        let current = metadata.permissions().mode() & 0o777;
+        if current != 0o600 {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn tighten_cache_permissions(_path: &std::path::Path) {}
 
 // ── Base HTTP helpers ───────────────────────────────────
 
@@ -88,6 +186,25 @@ fn extract_set_cookie(headers: &reqwest::header::HeaderMap, name: &str) -> Optio
         }
     }
     None
+}
+
+async fn read_success_text(resp: reqwest::Response, action: &str) -> Result<String, anyhow::Error> {
+    let status = resp.status();
+    let body_text = resp.text().await?;
+    if !status.is_success() {
+        return Err(anyhow::anyhow!(sanitized_http_error_message(
+            action, status, &body_text
+        )));
+    }
+    Ok(body_text)
+}
+
+fn parse_json<T: serde::de::DeserializeOwned>(
+    action: &str,
+    body_text: &str,
+) -> Result<T, anyhow::Error> {
+    serde_json::from_str(body_text)
+        .map_err(|e| anyhow::anyhow!(sanitized_parse_error_message(action, &e, body_text)))
 }
 
 // ── Auth response types ─────────────────────────────────
@@ -236,6 +353,16 @@ async fn get_ingress_cookie(client: &reqwest::Client) -> Result<String, anyhow::
         .send()
         .await?;
 
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body_text = resp.text().await?;
+        return Err(anyhow::anyhow!(sanitized_http_error_message(
+            "StepFun get ingress cookie",
+            status,
+            &body_text
+        )));
+    }
+
     extract_set_cookie(resp.headers(), "INGRESSCOOKIE")
         .ok_or_else(|| anyhow::anyhow!("Failed to get INGRESSCOOKIE from {}", PLATFORM_URL))
 }
@@ -256,11 +383,13 @@ async fn full_login(
         .send()
         .await?;
 
-    let body_text = reg_resp.text().await?;
-    log::debug!("RegisterDevice response: {}", body_text);
+    let body_text = read_success_text(reg_resp, "StepFun RegisterDevice").await?;
+    log::debug!(
+        "RegisterDevice response excerpt: {}",
+        sanitize_response_excerpt(&body_text)
+    );
 
-    let reg: RegisterDeviceResponse = serde_json::from_str(&body_text)
-        .map_err(|e| anyhow::anyhow!("RegisterDevice parse error: {}. Body: {}", e, body_text))?;
+    let reg: RegisterDeviceResponse = parse_json("StepFun RegisterDevice", &body_text)?;
 
     let access = reg
         .access_token
@@ -290,11 +419,13 @@ async fn full_login(
         .send()
         .await?;
 
-    let body_text = login_resp.text().await?;
-    log::debug!("SignIn response: {}", body_text);
+    let body_text = read_success_text(login_resp, "StepFun SignInByPassword").await?;
+    log::debug!(
+        "SignIn response excerpt: {}",
+        sanitize_response_excerpt(&body_text)
+    );
 
-    let login: LoginResponse = serde_json::from_str(&body_text)
-        .map_err(|e| anyhow::anyhow!("SignIn parse error: {}. Body: {}", e, body_text))?;
+    let login: LoginResponse = parse_json("StepFun SignInByPassword", &body_text)?;
 
     let access = login
         .access_token
@@ -322,6 +453,7 @@ async fn query_plan_status(client: &reqwest::Client, token: &str) -> Option<Stri
 
     match resp {
         Ok(resp) => {
+            let status = resp.status();
             let body_text = match resp.text().await {
                 Ok(t) => t,
                 Err(e) => {
@@ -329,12 +461,22 @@ async fn query_plan_status(client: &reqwest::Client, token: &str) -> Option<Stri
                     return None;
                 }
             };
-            log::debug!("Plan status response: {}", body_text);
+            if !status.is_success() {
+                log::debug!(
+                    "{}",
+                    sanitized_http_error_message("StepFun plan status", status, &body_text)
+                );
+                return None;
+            }
+            log::debug!(
+                "Plan status response excerpt: {}",
+                sanitize_response_excerpt(&body_text)
+            );
 
-            let plan: PlanStatusResponse = match serde_json::from_str(&body_text) {
+            let plan: PlanStatusResponse = match parse_json("StepFun plan status", &body_text) {
                 Ok(p) => p,
                 Err(e) => {
-                    log::debug!("Plan status parse failed: {}. Body: {}", e, body_text);
+                    log::debug!("Plan status parse failed: {}", e);
                     return None;
                 }
             };
@@ -374,11 +516,13 @@ async fn query_usage(
         .send()
         .await?;
 
-    let body_text = resp.text().await?;
-    log::debug!("Rate limit response: {}", body_text);
+    let body_text = read_success_text(resp, "StepFun rate limit").await?;
+    log::debug!(
+        "Rate limit response excerpt: {}",
+        sanitize_response_excerpt(&body_text)
+    );
 
-    let r: RateLimitResponse = serde_json::from_str(&body_text)
-        .map_err(|e| anyhow::anyhow!("Rate limit parse error: {}. Body: {}", e, body_text))?;
+    let r: RateLimitResponse = parse_json("StepFun rate limit", &body_text)?;
 
     Ok(r)
 }
@@ -403,58 +547,97 @@ impl Provider for StepFunProvider {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("StepFun password not configured"))?;
 
-        let client = reqwest::Client::builder().build()?;
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
+            .build()?;
 
-        // Step 1: get INGRESSCOOKIE
-        let ingress = get_ingress_cookie(&client).await?;
-
-        // Step 2+3: login → token
-        let token = full_login(&client, username, password, &ingress).await?;
-
-        // Step 4: query usage
-        let data = query_usage(&client, &token).await?;
-
-        // Step 5: query plan status (graceful degradation on failure)
-        let plan_name = query_plan_status(&client, &token).await;
-
-        // Check for auth errors
-        if data.status != Some(1) {
-            let msg = data.message.unwrap_or_else(|| "Unknown error".into());
-            // If auth error, re-login and retry once
-            if msg.contains("unauthenticated")
-                || msg.contains("embuzzled")
-                || msg.contains("embezzled")
-            {
-                log::warn!("Token invalid, re-logging in...");
-                let ingress = get_ingress_cookie(&client).await?;
-                let token = full_login(&client, username, password, &ingress).await?;
-                let data = query_usage(&client, &token).await?;
-                if data.status != Some(1) {
-                    return Ok(ProviderStatus {
-                        provider_id: "stepfun".into(),
-                        provider_name: "StepFun".into(),
-                        available: false,
-                        remaining_percent: 0.0,
-                        details: HashMap::new(),
-                        error: Some(data.message.unwrap_or_else(|| "Unknown error".into())),
-                    });
+        if let Some(cache) = read_token_cache() {
+            let data = match query_usage(&client, &cache.token).await {
+                Ok(data) => data,
+                Err(e) if is_auth_transport_error(&e.to_string()) => {
+                    log::warn!("StepFun cached token rejected, re-logging in...");
+                    clear_token_cache();
+                    let token = login_with_fresh_ingress(&client, username, password).await?;
+                    let data = query_usage(&client, &token).await?;
+                    if data.status == Some(1) {
+                        write_token_cache(&token);
+                    }
+                    return finish_usage_status(&client, &token, data).await;
                 }
-                // Retry plan status on re-login
-                let plan_name = query_plan_status(&client, &token).await;
+                Err(e) => return Err(e),
+            };
+            if data.status == Some(1) {
+                let plan_name = query_plan_status(&client, &cache.token).await;
                 return build_status(&data, plan_name.as_deref());
             }
-            return Ok(ProviderStatus {
-                provider_id: "stepfun".into(),
-                provider_name: "StepFun".into(),
-                available: false,
-                remaining_percent: 0.0,
-                details: HashMap::new(),
-                error: Some(msg),
-            });
+
+            if !is_auth_error(&data) {
+                return unavailable_status(rate_limit_message(data));
+            }
+
+            log::warn!("StepFun cached token invalid, re-logging in...");
+            clear_token_cache();
         }
 
-        build_status(&data, plan_name.as_deref())
+        let token = login_with_fresh_ingress(&client, username, password).await?;
+        let data = query_usage(&client, &token).await?;
+        if data.status == Some(1) {
+            write_token_cache(&token);
+        } else if is_auth_error(&data) {
+            clear_token_cache();
+        }
+        finish_usage_status(&client, &token, data).await
     }
+}
+
+async fn finish_usage_status(
+    client: &reqwest::Client,
+    token: &str,
+    data: RateLimitResponse,
+) -> Result<ProviderStatus, anyhow::Error> {
+    if data.status != Some(1) {
+        return unavailable_status(rate_limit_message(data));
+    }
+
+    let plan_name = query_plan_status(client, token).await;
+    build_status(&data, plan_name.as_deref())
+}
+
+async fn login_with_fresh_ingress(
+    client: &reqwest::Client,
+    username: &str,
+    password: &str,
+) -> Result<String, anyhow::Error> {
+    let ingress = get_ingress_cookie(client).await?;
+    full_login(client, username, password, &ingress).await
+}
+
+fn is_auth_error(data: &RateLimitResponse) -> bool {
+    let message = data.message.as_deref().unwrap_or_default();
+    let message = message.to_ascii_lowercase();
+    message.contains("unauthenticated")
+        || message.contains("embuzzled")
+        || message.contains("embezzled")
+}
+
+fn is_auth_transport_error(message: &str) -> bool {
+    message.contains("HTTP 401") || message.contains("HTTP 403")
+}
+
+fn rate_limit_message(data: RateLimitResponse) -> String {
+    data.message.unwrap_or_else(|| "Unknown error".into())
+}
+
+fn unavailable_status(message: String) -> Result<ProviderStatus, anyhow::Error> {
+    Ok(ProviderStatus {
+        provider_id: "stepfun".into(),
+        provider_name: "StepFun".into(),
+        available: false,
+        remaining_percent: 0.0,
+        details: HashMap::new(),
+        error: Some(sanitize_error_message(&message)),
+    })
 }
 
 fn build_status(

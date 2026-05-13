@@ -99,6 +99,50 @@ fn test_status_snapshot_serialization() {
 }
 
 #[test]
+fn test_sanitize_error_message_redacts_sensitive_values() {
+    let message = r#"Authorization: Bearer sk-secret Set-Cookie: sid=secret_cookie Cookie: Oasis-Token=tok123; INGRESSCOOKIE=ing456 api_key=secret_api {"password":"pw","accessToken":{"raw":"secret_access"},"refreshToken":{"raw":"secret_refresh"},"access_token":"snake_access","refresh_token":"snake_refresh","cookie_header":"secret_header"}"#;
+
+    let sanitized = sanitize_error_message(message);
+
+    assert!(!sanitized.contains("sk-secret"));
+    assert!(!sanitized.contains("tok123"));
+    assert!(!sanitized.contains("ing456"));
+    assert!(!sanitized.contains("pw"));
+    assert!(!sanitized.contains("secret_access"));
+    assert!(!sanitized.contains("secret_refresh"));
+    assert!(!sanitized.contains("secret_cookie"));
+    assert!(!sanitized.contains("secret_api"));
+    assert!(!sanitized.contains("snake_access"));
+    assert!(!sanitized.contains("snake_refresh"));
+    assert!(!sanitized.contains("secret_header"));
+    assert!(sanitized.contains("<redacted>"));
+}
+
+#[test]
+fn test_sanitize_error_message_redacts_url_query() {
+    let message = "failed https://example.test/api?accessToken=secret&safe=value#frag and https://example.test/ok";
+
+    let sanitized = sanitize_error_message(message);
+
+    assert!(!sanitized.contains("accessToken=secret"));
+    assert!(!sanitized.contains("safe=value"));
+    assert!(sanitized.contains("https://example.test/api?<redacted>#frag"));
+    assert!(sanitized.contains("https://example.test/ok"));
+}
+
+#[test]
+fn test_sanitize_response_excerpt_truncates_long_errors() {
+    let long_message = format!("password=secret {}", "x".repeat(400));
+
+    let sanitized = sanitize_response_excerpt(&long_message);
+
+    assert!(!sanitized.contains("secret"));
+    assert!(sanitized.contains("<redacted>"));
+    assert!(sanitized.contains("<truncated>"));
+    assert!(sanitized.chars().count() < long_message.chars().count());
+}
+
+#[test]
 fn test_provider_status_with_error() {
     let status = ProviderStatus {
         provider_id: "deepseek".into(),

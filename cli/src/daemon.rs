@@ -6,21 +6,27 @@ use crate::{
     config::Config,
     output,
     providers::{
-        deepseek::DeepSeekProvider, opencodego::OpenCodeGoProvider, stepfun::StepFunProvider,
-        Provider, StatusSnapshot,
+        deepseek::DeepSeekProvider, opencodego::OpenCodeGoProvider, sanitize_error_message,
+        stepfun::StepFunProvider, Provider, StatusSnapshot,
     },
 };
+
+pub const PROVIDER_OUTER_TIMEOUT_SECS: u64 = 65;
+pub const STEPFUN_OUTER_TIMEOUT_SECS: u64 = 180;
 
 pub async fn run_daemon() -> anyhow::Result<()> {
     log::info!("Daemon started");
 
     // Fetch immediately on startup so the frontends do not wait for the first
     // refresh interval before status.json is populated or refreshed.
-    let mut config = Config::load()?;
-    let mut interval_secs = config.general.refresh_interval_secs;
+    let mut config = load_initial_config();
+    let mut interval_secs = config.general.refresh_interval_secs_clamped();
     log::info!("Initial refresh started, interval: {}s", interval_secs);
     if let Err(e) = fetch_and_write_status(&config).await {
-        log::error!("Initial fetch failed: {}", e);
+        log::error!(
+            "Initial fetch failed: {}",
+            sanitize_error_message(&e.to_string())
+        );
     }
 
     loop {
@@ -28,12 +34,31 @@ pub async fn run_daemon() -> anyhow::Result<()> {
 
         // Reload config every cycle so UI changes (refresh interval / provider enabled)
         // take effect without restarting the daemon.
-        config = Config::load()?;
-        interval_secs = config.general.refresh_interval_secs;
+        match Config::load() {
+            Ok(new_config) => config = new_config,
+            Err(e) => log::warn!(
+                "Failed to reload config; keeping last-known-good config: {}",
+                sanitize_error_message(&e.to_string())
+            ),
+        }
+        interval_secs = config.general.refresh_interval_secs_clamped();
         log::info!("Refresh cycle started, interval: {}s", interval_secs);
 
         if let Err(e) = fetch_and_write_status(&config).await {
-            log::error!("Fetch failed: {}", e);
+            log::error!("Fetch failed: {}", sanitize_error_message(&e.to_string()));
+        }
+    }
+}
+
+fn load_initial_config() -> Config {
+    match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to load config; using defaults: {}",
+                sanitize_error_message(&e.to_string())
+            );
+            Config::default()
         }
     }
 }
@@ -45,22 +70,8 @@ pub async fn fetch_and_write_status(config: &Config) -> anyhow::Result<StatusSna
     Ok(snapshot)
 }
 
-async fn sleep_until_next_cycle(initial_interval_secs: u64) {
-    let mut elapsed_secs = 0;
-
-    loop {
-        let current_interval_secs = Config::load()
-            .map(|config| config.general.refresh_interval_secs)
-            .unwrap_or(initial_interval_secs);
-
-        if elapsed_secs >= current_interval_secs {
-            break;
-        }
-
-        let step_secs = (current_interval_secs - elapsed_secs).min(1);
-        tokio::time::sleep(Duration::from_secs(step_secs)).await;
-        elapsed_secs += step_secs;
-    }
+async fn sleep_until_next_cycle(interval_secs: u64) {
+    tokio::time::sleep(Duration::from_secs(interval_secs)).await;
 }
 
 pub async fn fetch_all(config: &Config) -> anyhow::Result<StatusSnapshot> {
@@ -97,18 +108,7 @@ pub async fn fetch_all(config: &Config) -> anyhow::Result<StatusSnapshot> {
     let (ds_result, sf_result, og_result) = tokio::join!(ds_fetch, sf_fetch, og_fetch);
 
     let mut providers = Vec::new();
-    for result in [ds_result, sf_result, og_result] {
-        match result.transpose() {
-            Ok(Some(status)) => providers.push(status),
-            Ok(None) => {}
-            Err(e) if e.to_string().starts_with("Provider disabled:") => {
-                log::debug!("Provider skipped: {}", e);
-            }
-            Err(e) => {
-                log::error!("Provider fetch error: {}", e);
-            }
-        }
-    }
+    providers.extend([ds_result, sf_result, og_result].into_iter().flatten());
 
     Ok(StatusSnapshot {
         updated_at: Utc::now().to_rfc3339(),
@@ -119,6 +119,44 @@ pub async fn fetch_all(config: &Config) -> anyhow::Result<StatusSnapshot> {
 async fn fetch_provider(
     provider: &dyn Provider,
     config: &crate::providers::ProviderConfig,
-) -> anyhow::Result<crate::providers::ProviderStatus> {
-    provider.fetch(config).await
+) -> crate::providers::ProviderStatus {
+    log::debug!("Fetching provider {} ({})", provider.id(), provider.name());
+    // StepFun performs a multi-request login + usage flow and may retry once on
+    // auth errors, so it needs a wider outer timeout than single-request providers.
+    let timeout_secs = if provider.id() == "stepfun" {
+        STEPFUN_OUTER_TIMEOUT_SECS
+    } else {
+        PROVIDER_OUTER_TIMEOUT_SECS
+    };
+    let result =
+        tokio::time::timeout(Duration::from_secs(timeout_secs), provider.fetch(config)).await;
+
+    match result {
+        Ok(Ok(status)) => status,
+        Ok(Err(e)) => provider_error_status(provider, &e.to_string()),
+        Err(_) => provider_error_status(
+            provider,
+            &format!("Provider fetch timed out after {}s", timeout_secs),
+        ),
+    }
 }
+
+fn provider_error_status(
+    provider: &dyn Provider,
+    message: &str,
+) -> crate::providers::ProviderStatus {
+    let sanitized = sanitize_error_message(message);
+    log::error!("Provider {} fetch error: {}", provider.id(), sanitized);
+    crate::providers::ProviderStatus {
+        provider_id: provider.id().into(),
+        provider_name: provider.name().into(),
+        available: false,
+        remaining_percent: 0.0,
+        details: std::collections::HashMap::new(),
+        error: Some(sanitized),
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/daemon.rs"]
+mod tests;

@@ -75,7 +75,7 @@ struct ProviderCardView: View {
         let pct = hasBalance ? 100 : 0
 
         return VStack(alignment: .leading, spacing: 0) {
-            BarSection(title: "Balance", percent: pct, resetTime: nil)
+            BarSection(title: "Balance Available", percent: pct, resetTime: nil)
 
             // Balance detail text
             let cu = d["currency"]?.stringValue ?? "CNY"
@@ -87,6 +87,10 @@ struct ProviderCardView: View {
                 .font(.system(size: 11))
                 .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.5) : Color(red: 0.6, green: 0.6, blue: 0.6))  // #999
                 .padding(.top, 4)
+            Text("Progress indicates whether any balance remains, not proportional quota usage.")
+                .font(.system(size: 11))
+                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.4) : Color(red: 0.6, green: 0.6, blue: 0.6))
+                .padding(.top, 2)
         }
     }
 

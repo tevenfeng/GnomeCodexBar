@@ -13,6 +13,8 @@ const SELECTED_PROVIDER_FILE_PATH = GLib.build_filenamev([
     'selected_provider.json',
 ]);
 
+let _lastGoodStatus = null;
+
 /**
  * Read and parse the status.json file.
  * @returns {Object|null} Parsed status object or null if unavailable.
@@ -20,17 +22,18 @@ const SELECTED_PROVIDER_FILE_PATH = GLib.build_filenamev([
 export function readStatus() {
     const file = Gio.File.new_for_path(STATUS_FILE_PATH);
     if (!file.query_exists(null)) {
-        return null;
+        return _lastGoodStatus;
     }
 
     try {
         const [, contents] = file.load_contents(null);
         const decoder = new TextDecoder('utf-8');
         const text = decoder.decode(contents);
-        return JSON.parse(text);
+        _lastGoodStatus = JSON.parse(text);
+        return _lastGoodStatus;
     } catch (e) {
         log('[codex-bar] Failed to read status.json: ' + e.message);
-        return null;
+        return _lastGoodStatus;
     }
 }
 
@@ -72,7 +75,7 @@ export function writeSelectedProvider(providerId) {
         encoder.encode(data),
         null,
         false,
-        Gio.FileCreateFlags.REPLACE_DESTINATION,
+        Gio.FileCreateFlags.REPLACE_DESTINATION | Gio.FileCreateFlags.PRIVATE,
         null,
     );
 }
@@ -90,9 +93,26 @@ export function monitorStatus(callback) {
         parent.make_directory_with_parents(null);
     }
 
-    const monitor = file.monitor_file(Gio.FileMonitorFlags.NONE, null);
-    monitor.connect('changed', () => {
-        callback();
+    const basename = file.get_basename();
+    const interestingEvents = new Set([
+        Gio.FileMonitorEvent.CREATED,
+        Gio.FileMonitorEvent.CHANGED,
+        Gio.FileMonitorEvent.CHANGES_DONE_HINT,
+        Gio.FileMonitorEvent.DELETED,
+        Gio.FileMonitorEvent.MOVED,
+        Gio.FileMonitorEvent.MOVED_IN,
+        Gio.FileMonitorEvent.MOVED_OUT,
+        Gio.FileMonitorEvent.RENAMED,
+    ]);
+
+    const monitor = parent.monitor_directory(Gio.FileMonitorFlags.NONE, null);
+    monitor.connect('changed', (_monitor, changedFile, otherFile, eventType) => {
+        if (!interestingEvents.has(eventType))
+            return;
+        const changedName = changedFile ? changedFile.get_basename() : null;
+        const otherName = otherFile ? otherFile.get_basename() : null;
+        if (changedName === basename || otherName === basename)
+            callback();
     });
     return monitor;
 }

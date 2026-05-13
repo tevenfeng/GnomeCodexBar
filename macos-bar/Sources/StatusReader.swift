@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 /// Reads status.json and selected_provider.json, monitors for changes.
 @MainActor
@@ -10,18 +11,19 @@ class StatusReader: ObservableObject {
     @Published private var providerEnabled: [String: Bool]
 
     private var fileSource: DispatchSourceFileSystemObject?
-    private var selectedSource: DispatchSourceFileSystemObject?
     private var pollTimer: Timer?
 
     private let statusPath: URL
     private let selectedPath: URL
     private let configPath: URL
+    private let dataDir: URL
 
     init() {
         // Use the same directory as the Rust CLI (dirs::data_local_dir())
         // On macOS this is ~/Library/Application Support/gnome-codex-bar/
         let dataDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/gnome-codex-bar")
+        self.dataDir = dataDir
         self.statusPath = dataDir.appendingPathComponent("status.json")
         self.selectedPath = dataDir.appendingPathComponent("selected_provider.json")
         self.configPath = dataDir.appendingPathComponent("config.toml")
@@ -39,10 +41,13 @@ class StatusReader: ObservableObject {
 
     func readStatus() {
         guard let data = try? Data(contentsOf: statusPath) else {
-            status = nil
             return
         }
-        status = try? JSONDecoder().decode(StatusSnapshot.self, from: data)
+        do {
+            status = try JSONDecoder().decode(StatusSnapshot.self, from: data)
+        } catch {
+            print("Failed to decode status.json: \(error)")
+        }
     }
 
     func readSelectedProvider() {
@@ -87,8 +92,9 @@ class StatusReader: ObservableObject {
         }
 
         for id in ["deepseek", "stepfun", "opencodego"] {
-            if let value = tomlValue(forKey: "enabled", inSection: "providers.\(id)", content: content) {
-                providerEnabled[id] = value.lowercased() != "false"
+            if let value = tomlValue(forKey: "enabled", inSection: "providers.\(id)", content: content),
+               let enabled = tomlBool(value) {
+                providerEnabled[id] = enabled
             } else {
                 providerEnabled[id] = id != "opencodego"
             }
@@ -126,18 +132,89 @@ class StatusReader: ObservableObject {
     private func tomlValue(forKey key: String, inSection section: String, content: String) -> String? {
         var currentSection: String?
         for rawLine in content.components(separatedBy: .newlines) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            let line = stripTomlInlineComment(rawLine).trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("[") && line.hasSuffix("]") {
                 currentSection = String(line.dropFirst().dropLast())
                 continue
             }
             guard currentSection == section else { continue }
-            let prefix = "\(key) ="
-            if line.hasPrefix(prefix) {
-                return line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let equalsIndex = line.firstIndex(of: "=") else { continue }
+            let lineKey = String(line[..<equalsIndex]).trimmingCharacters(in: .whitespaces)
+            if lineKey == key {
+                let rawValue = String(line[line.index(after: equalsIndex)...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return decodeTomlBasicString(rawValue) ?? rawValue
             }
         }
         return nil
+    }
+
+    private func tomlBool(_ value: String) -> Bool? {
+        switch value {
+        case "true": return true
+        case "false": return false
+        default: return nil
+        }
+    }
+
+    private func stripTomlInlineComment(_ line: String) -> String {
+        var result = ""
+        var inString = false
+        var escaped = false
+
+        for char in line {
+            if inString {
+                result.append(char)
+                if escaped {
+                    escaped = false
+                } else if char == "\\" {
+                    escaped = true
+                } else if char == "\"" {
+                    inString = false
+                }
+                continue
+            }
+
+            if char == "#" {
+                break
+            }
+            result.append(char)
+            if char == "\"" {
+                inString = true
+            }
+        }
+
+        return result
+    }
+
+    private func decodeTomlBasicString(_ value: String) -> String? {
+        guard value.hasPrefix("\""), value.hasSuffix("\"") else { return nil }
+        let inner = value.dropFirst().dropLast()
+        var result = ""
+        var escaped = false
+
+        for char in inner {
+            if escaped {
+                switch char {
+                case "\\": result.append("\\")
+                case "\"": result.append("\"")
+                case "n": result.append("\n")
+                case "t": result.append("\t")
+                case "r": result.append("\r")
+                default: result.append(char)
+                }
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else {
+                result.append(char)
+            }
+        }
+
+        if escaped {
+            result.append("\\")
+        }
+        return result
     }
 
     private func updateConfigValue(section: String, key: String, value: String) {
@@ -149,10 +226,67 @@ class StatusReader: ObservableObject {
                 at: configPath.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try updated.write(to: configPath, atomically: true, encoding: .utf8)
+            try writePrivateFileAtomically(updated, to: configPath)
         } catch {
             print("Failed to write config.toml: \(error)")
         }
+    }
+
+    private func writePrivateFileAtomically(_ content: String, to url: URL) throws {
+        let dir = url.deletingLastPathComponent()
+        let tempURL = dir.appendingPathComponent(".\(url.lastPathComponent).\(getpid()).\(UUID().uuidString).tmp")
+        var fd = open(tempURL.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+
+        do {
+            guard let data = content.data(using: .utf8) else {
+                throw NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileWriteInapplicableStringEncoding.rawValue)
+            }
+            try data.withUnsafeBytes { buffer in
+                var written = 0
+                while written < buffer.count {
+                    let result = Darwin.write(fd, buffer.baseAddress!.advanced(by: written), buffer.count - written)
+                    if result < 0 && errno == EINTR {
+                        continue
+                    }
+                    if result < 0 {
+                        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                    }
+                    if result == 0 {
+                        throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO))
+                    }
+                    written += result
+                }
+            }
+            if fsync(fd) != 0 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            if close(fd) != 0 {
+                let closeError = errno
+                fd = -1
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(closeError))
+            }
+            fd = -1
+            if rename(tempURL.path, url.path) != 0 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            fsyncDirectory(dir)
+        } catch {
+            if fd >= 0 {
+                close(fd)
+            }
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
+    }
+
+    private func fsyncDirectory(_ dir: URL) {
+        let fd = open(dir.path, O_RDONLY)
+        guard fd >= 0 else { return }
+        _ = fsync(fd)
+        close(fd)
     }
 
     private func replacingTomlValue(in content: String, section: String, key: String, value: String) -> String {
@@ -197,12 +331,7 @@ class StatusReader: ObservableObject {
     // ── File monitoring ───────────────────────────────
 
     func startMonitoring() {
-        monitorFile(at: statusPath) { [weak self] in
-            self?.readStatus()
-        }
-        monitorFile(at: selectedPath) { [weak self] in
-            self?.readSelectedProvider()
-        }
+        monitorDataDirectory()
 
         startPollTimer()
     }
@@ -221,21 +350,22 @@ class StatusReader: ObservableObject {
         }
     }
 
-    private func monitorFile(at url: URL, onChange: @escaping () -> Void) {
-        let path = url.path
-        guard FileManager.default.fileExists(atPath: path) else { return }
+    private func monitorDataDirectory() {
+        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
 
-        let fd = open(path, O_EVTONLY)
+        let fd = open(dataDir.path, O_EVTONLY)
         guard fd >= 0 else { return }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
-            eventMask: .write,
+            eventMask: [.write, .rename, .delete, .extend, .attrib],
             queue: DispatchQueue.main
         )
 
-        source.setEventHandler {
-            onChange()
+        source.setEventHandler { [weak self] in
+            self?.readCliSettings()
+            self?.readStatus()
+            self?.readSelectedProvider()
         }
 
         source.setCancelHandler {
@@ -244,12 +374,7 @@ class StatusReader: ObservableObject {
 
         source.resume()
 
-        // Store the source to keep it alive
-        if url.path.contains("status.json") && !url.path.contains("selected") {
-            fileSource = source
-        } else {
-            selectedSource = source
-        }
+        fileSource = source
     }
 
     // ── Provider enable/disable ───────────────────────
@@ -333,12 +458,13 @@ class StatusReader: ObservableObject {
 
     /// Get the currently active provider for panel display
     var activeProvider: ProviderStatus? {
-        guard let s = status else { return nil }
+        let providers = enabledProviders
+        guard !providers.isEmpty else { return nil }
         if let sel = selectedProvider,
-           let p = s.providers.first(where: { $0.providerId == sel }) {
+           let p = providers.first(where: { $0.providerId == sel }) {
             return p
         }
-        return s.providers.first
+        return providers.first
     }
 
     /// Summary text for menu bar button (selected provider only)
@@ -365,12 +491,14 @@ class StatusReader: ObservableObject {
 
     /// Short label for menu bar button (DS / SF / OCG)
     var shortLabel: String {
-        switch selectedProvider ?? activeProvider?.providerId ?? "stepfun" {
+        let providerId = activeProvider?.providerId
+        switch providerId {
         case "deepseek": return "DS"
         case "stepfun": return "SF"
         case "opencodego": return "OCG"
+        case nil: return "--"
         default:
-            return String((selectedProvider ?? "--").prefix(3)).uppercased()
+            return String((providerId ?? "--").prefix(3)).uppercased()
         }
     }
 

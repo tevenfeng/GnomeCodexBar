@@ -7,9 +7,14 @@ struct BarSection: View {
     let resetTime: String?
     @Environment(\.colorScheme) private var colorScheme
 
-    // Blue fill (#2196F3)
     private var barColor: Color {
-        Color(red: 0.13, green: 0.59, blue: 0.95)
+        if percent >= 50 {
+            return Color(red: 0.30, green: 0.69, blue: 0.31) // green
+        }
+        if percent >= 20 {
+            return Color(red: 1.0, green: 0.76, blue: 0.03) // yellow
+        }
+        return Color(red: 0.96, green: 0.26, blue: 0.21) // red
     }
 
     var body: some View {

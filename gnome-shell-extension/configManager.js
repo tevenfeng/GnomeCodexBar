@@ -24,11 +24,48 @@ function _writeLines(lines) {
     // Ensure directory exists
     const dir = Gio.File.new_for_path(CFG_DIR);
     if (!dir.query_exists(null)) dir.make_directory_with_parents(null);
-    // Write to temp file, then rename
     const content = lines.join('\n');
-    const tmpPath = CFG_PATH + '.tmp';
-    try { GLib.file_set_contents(tmpPath, content); } catch (e) { return false; }
-    return GLib.file_set_contents(CFG_PATH, content);
+    const file = Gio.File.new_for_path(CFG_PATH);
+    try {
+        file.replace_contents(
+            new TextEncoder().encode(content),
+            null,
+            false,
+            Gio.FileCreateFlags.REPLACE_DESTINATION | Gio.FileCreateFlags.PRIVATE,
+            null,
+        );
+        return true;
+    } catch (e) {
+        log(`[codex-bar] Failed to write config.toml: ${e}`);
+        return false;
+    }
+}
+
+function _stripInlineComment(value) {
+    let quote = null;
+    let escaped = false;
+    for (let i = 0; i < value.length; i++) {
+        const ch = value[i];
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\' && quote === '"') {
+            escaped = true;
+            continue;
+        }
+        if ((ch === '"' || ch === "'") && quote === null) {
+            quote = ch;
+            continue;
+        }
+        if (ch === quote) {
+            quote = null;
+            continue;
+        }
+        if (ch === '#' && quote === null)
+            return value.substring(0, i).trimEnd();
+    }
+    return value.trimEnd();
 }
 
 // Find the index of [section] in lines, starting from startIdx
@@ -52,7 +89,6 @@ function _findKey(lines, key, sectionStart, sectionEnd) {
 // Get the end index of a section (start of next section or EOF)
 function _sectionEnd(lines, sectionStart) {
     for (let i = sectionStart + 1; i < lines.length; i++) {
-        if (lines[i].trimStart().startsWith('[') && !lines[i].trimStart().startsWith('[')) continue;
         if (/^\[.*\]\s*$/.test(lines[i].trim())) return i;
     }
     return lines.length;
@@ -68,8 +104,9 @@ function _readString(lines, section, key) {
     const line = lines[ki].trim();
     const eqIdx = line.indexOf('=');
     if (eqIdx < 0) return null;
-    let val = line.substring(eqIdx + 1).trim();
-    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+    let val = _stripInlineComment(line.substring(eqIdx + 1)).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))
+        val = val.slice(1, -1);
     return val;
 }
 
@@ -85,7 +122,9 @@ function _readInt(lines, section, key) {
 function _readBool(lines, section, key) {
     const s = _readString(lines, section, key);
     if (s === null) return null;
-    return s === 'true';
+    if (s === 'true') return true;
+    if (s === 'false') return false;
+    return null;
 }
 
 // Write a key=value (int or bool) into a section, preserving all other content
@@ -139,7 +178,7 @@ export class ConfigManager {
     setRefreshInterval(seconds) {
         if (!this._lines) this._lines = [];
         _writeKey(this._lines, 'general', 'refresh_interval_secs', seconds);
-        _writeLines(this._lines);
+        return _writeLines(this._lines);
     }
 
     isProviderEnabled(providerId) {
@@ -151,7 +190,7 @@ export class ConfigManager {
     setProviderEnabled(providerId, enabled) {
         if (!this._lines) this._lines = [];
         _writeKey(this._lines, 'providers.' + providerId, 'enabled', enabled);
-        _writeLines(this._lines);
+        return _writeLines(this._lines);
     }
 
     // Get all provider enabled states
@@ -185,11 +224,29 @@ export class ConfigManager {
                 'selected_provider = "deepseek"',
                 '',
             ];
-            try { GLib.file_set_contents(CFG_PATH, defaults.join('\n')); } catch (e) {}
+            _writeLines(defaults);
         }
         try {
-            this._monitor = file.monitor_file(Gio.FileMonitorFlags.NONE, null);
-            this._monitor.connect('changed', () => {
+            const dir = Gio.File.new_for_path(CFG_DIR);
+            const basename = file.get_basename();
+            const interestingEvents = new Set([
+                Gio.FileMonitorEvent.CREATED,
+                Gio.FileMonitorEvent.CHANGED,
+                Gio.FileMonitorEvent.CHANGES_DONE_HINT,
+                Gio.FileMonitorEvent.DELETED,
+                Gio.FileMonitorEvent.MOVED,
+                Gio.FileMonitorEvent.MOVED_IN,
+                Gio.FileMonitorEvent.MOVED_OUT,
+                Gio.FileMonitorEvent.RENAMED,
+            ]);
+            this._monitor = dir.monitor_directory(Gio.FileMonitorFlags.NONE, null);
+            this._monitor.connect('changed', (_monitor, changedFile, otherFile, eventType) => {
+                if (!interestingEvents.has(eventType))
+                    return;
+                const changedName = changedFile ? changedFile.get_basename() : null;
+                const otherName = otherFile ? otherFile.get_basename() : null;
+                if (changedName !== basename && otherName !== basename)
+                    return;
                 this.reload();
                 if (onChanged) onChanged();
             });

@@ -20,7 +20,7 @@ echo ""
 # Step 1: Build and install CLI
 echo "[1/4] Building Rust CLI..."
 cd "$CLI_DIR"
-cargo build --release 2>&1 | tail -3
+cargo build --release
 
 echo "      Installing CLI to $BIN_DIR..."
 mkdir -p "$BIN_DIR"

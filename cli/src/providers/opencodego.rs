@@ -1,16 +1,30 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::LazyLock,
+    time::Duration as StdDuration,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
 use serde_json::Value;
 
-use super::{Provider, ProviderConfig, ProviderStatus};
+use super::{
+    Provider, ProviderConfig, ProviderStatus, HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
+};
 
 const BASE_URL: &str = "https://opencode.ai";
 const SERVER_URL: &str = "https://opencode.ai/_server";
 const WORKSPACES_SERVER_ID: &str =
     "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f";
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+static WORKSPACE_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"wrk_[A-Za-z0-9]+").expect("valid workspace id regex"));
+static WORKSPACE_OBJECT_ID_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"id\s*:\s*\"(wrk_[^\"]+)\""#).expect("valid workspace object id regex")
+});
+static DISCOVERED_WORKSPACE_IDS: LazyLock<std::sync::Mutex<HashMap<u64, String>>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 const PERCENT_KEYS: &[&str] = &[
     "usagePercent",
@@ -83,12 +97,15 @@ impl Provider for OpenCodeGoProvider {
 
     async fn fetch(&self, config: &ProviderConfig) -> Result<ProviderStatus, anyhow::Error> {
         let cookie_header = resolve_cookie_header(config)?;
-        let client = reqwest::Client::builder().build()?;
+        let client = reqwest::Client::builder()
+            .connect_timeout(StdDuration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+            .timeout(StdDuration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
+            .build()?;
         let workspace_id = match normalize_workspace_id(config.workspace_id.as_deref())
             .or_else(|| env_workspace_id().and_then(|id| normalize_workspace_id(Some(&id))))
         {
             Some(id) => id,
-            None => fetch_workspace_id(&client, &cookie_header).await?,
+            None => resolve_discovered_workspace_id(&client, &cookie_header).await?,
         };
         let text = fetch_usage_page(&client, &workspace_id, &cookie_header).await?;
         let snapshot = parse_subscription(&text, Utc::now())?;
@@ -137,8 +154,34 @@ fn normalize_workspace_id(raw: Option<&str>) -> Option<String> {
     if trimmed.starts_with("wrk_") && trimmed.len() > 4 {
         return Some(trimmed.to_string());
     }
-    let re = Regex::new(r"wrk_[A-Za-z0-9]+").ok()?;
-    re.find(trimmed).map(|m| m.as_str().to_string())
+    WORKSPACE_ID_RE
+        .find(trimmed)
+        .map(|m| m.as_str().to_string())
+}
+
+async fn resolve_discovered_workspace_id(
+    client: &reqwest::Client,
+    cookie_header: &str,
+) -> Result<String, anyhow::Error> {
+    let cache_key = cache_key_for_cookie(cookie_header);
+    if let Some(id) = DISCOVERED_WORKSPACE_IDS
+        .lock()
+        .ok()
+        .and_then(|cached| cached.get(&cache_key).cloned())
+    {
+        return Ok(id);
+    }
+    let id = fetch_workspace_id(client, cookie_header).await?;
+    if let Ok(mut cached) = DISCOVERED_WORKSPACE_IDS.lock() {
+        cached.insert(cache_key, id.clone());
+    }
+    Ok(id)
+}
+
+fn cache_key_for_cookie(cookie_header: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    cookie_header.hash(&mut hasher);
+    hasher.finish()
 }
 
 async fn fetch_workspace_id(
@@ -274,14 +317,10 @@ fn looks_signed_out(text: &str) -> bool {
 }
 
 fn parse_workspace_ids(text: &str) -> Vec<String> {
-    Regex::new(r#"id\s*:\s*\"(wrk_[^\"]+)\""#)
-        .ok()
-        .map(|re| {
-            re.captures_iter(text)
-                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
+    WORKSPACE_OBJECT_ID_RE
+        .captures_iter(text)
+        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+        .collect()
 }
 
 fn parse_workspace_ids_from_json(text: &str) -> Vec<String> {

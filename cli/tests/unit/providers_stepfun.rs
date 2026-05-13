@@ -1,5 +1,6 @@
 use super::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Wrapper structs for deserializing Flexible* types in isolation ──
 
@@ -343,4 +344,222 @@ fn test_plan_status_response_deserialize() {
     assert_eq!(sub.name, Some("Plus".to_string()));
     assert_eq!(sub.plan_type, Some(2));
     assert_eq!(sub.plan_status, Some(1));
+}
+
+#[test]
+fn test_stepfun_parse_json_error_is_sanitized() {
+    let body = r#"{"accessToken":{"raw":"secret_access"},"password":"secret_pw","broken""#;
+
+    let err = parse_json::<RegisterDeviceResponse>("StepFun RegisterDevice", body)
+        .expect_err("invalid JSON should fail");
+    let message = err.to_string();
+
+    assert!(message.contains("StepFun RegisterDevice parse error"));
+    assert!(message.contains("body_bytes="));
+    assert!(message.contains("body_chars="));
+    assert!(!message.contains("secret_access"));
+    assert!(!message.contains("secret_pw"));
+    assert!(message.contains("<redacted>"));
+}
+
+#[test]
+fn test_stepfun_http_error_message_is_sanitized() {
+    let body = r#"{"refreshToken":{"raw":"secret_refresh"},"Cookie":"Oasis-Token=secret_token"}"#;
+
+    let message = sanitized_http_error_message(
+        "StepFun rate limit",
+        reqwest::StatusCode::UNAUTHORIZED,
+        body,
+    );
+
+    assert!(message.contains("StepFun rate limit HTTP 401 Unauthorized"));
+    assert!(message.contains("body_bytes="));
+    assert!(message.contains("body_chars="));
+    assert!(!message.contains("secret_refresh"));
+    assert!(!message.contains("secret_token"));
+    assert!(message.contains("<redacted>"));
+}
+
+#[test]
+fn test_stepfun_business_error_message_is_sanitized_before_status_error() {
+    let data: RateLimitResponse = serde_json::from_str(
+        r#"{
+            "status": 0,
+            "message": "failed with Oasis-Token=secret_token password=secret_pw"
+        }"#,
+    )
+    .unwrap();
+    let raw_msg = data.message.unwrap_or_else(|| "Unknown error".into());
+    let safe_msg = sanitize_error_message(&raw_msg);
+
+    assert!(!safe_msg.contains("secret_token"));
+    assert!(!safe_msg.contains("secret_pw"));
+    assert!(safe_msg.contains("<redacted>"));
+}
+
+// ── Token cache tests ───────────────────────────────────
+
+#[test]
+fn test_stepfun_token_cache_toml_roundtrip() {
+    let cache = StepFunTokenCache {
+        token: "secret_token".into(),
+        updated_at: "2026-05-12T00:00:00Z".into(),
+    };
+
+    let toml = toml::to_string(&cache).unwrap();
+    let decoded: StepFunTokenCache = toml::from_str(&toml).unwrap();
+
+    assert_eq!(decoded, cache);
+}
+
+#[test]
+fn test_stepfun_cache_path_uses_data_dir_and_filename() {
+    let path = stepfun_cache_path();
+
+    assert!(path.ends_with("gnome-codex-bar/stepfun-cache.toml"));
+}
+
+#[test]
+fn test_stepfun_damaged_cache_is_ignored() {
+    let dir = unique_test_dir("damaged-cache");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("stepfun-cache.toml");
+    std::fs::write(&path, "token = ").unwrap();
+
+    assert_eq!(read_token_cache_from_path(&path), None);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_stepfun_empty_token_cache_is_ignored() {
+    let dir = unique_test_dir("empty-cache");
+    let path = dir.join("stepfun-cache.toml");
+    write_token_cache_to_path(
+        &path,
+        &StepFunTokenCache {
+            token: "   ".into(),
+            updated_at: "2026-05-12T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(read_token_cache_from_path(&path), None);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_stepfun_write_cache_roundtrip() {
+    let dir = unique_test_dir("write-cache");
+    let path = dir.join("stepfun-cache.toml");
+    let cache = StepFunTokenCache {
+        token: "secret_token".into(),
+        updated_at: "2026-05-12T00:00:00Z".into(),
+    };
+
+    write_token_cache_to_path(&path, &cache).unwrap();
+
+    assert_eq!(read_token_cache_from_path(&path), Some(cache));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_stepfun_write_cache_sets_unix_0600() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = unique_test_dir("cache-permissions");
+    let path = dir.join("stepfun-cache.toml");
+
+    write_token_cache_to_path(
+        &path,
+        &StepFunTokenCache {
+            token: "secret_token".into(),
+            updated_at: "2026-05-12T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_stepfun_read_cache_tightens_unix_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = unique_test_dir("cache-tighten-permissions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("stepfun-cache.toml");
+    std::fs::write(
+        &path,
+        "token = \"secret_token\"\nupdated_at = \"2026-05-12T00:00:00Z\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(read_token_cache_from_path(&path).is_some());
+
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_stepfun_auth_error_detection() {
+    for message in ["unauthenticated", "token embuzzled", "token embezzled"] {
+        let data: RateLimitResponse = serde_json::from_value(serde_json::json!({
+            "status": 0,
+            "message": message,
+        }))
+        .unwrap();
+        assert!(is_auth_error(&data), "expected auth error for {message}");
+    }
+
+    let data: RateLimitResponse = serde_json::from_value(serde_json::json!({
+        "status": 0,
+        "message": "rate limit temporarily unavailable",
+    }))
+    .unwrap();
+    assert!(!is_auth_error(&data));
+}
+
+#[test]
+fn test_stepfun_auth_transport_error_detection() {
+    assert!(is_auth_transport_error(
+        "StepFun rate limit HTTP 401 Unauthorized"
+    ));
+    assert!(is_auth_transport_error(
+        "StepFun rate limit HTTP 403 Forbidden"
+    ));
+    assert!(!is_auth_transport_error(
+        "StepFun rate limit HTTP 500 Internal Server Error"
+    ));
+}
+
+#[test]
+fn test_stepfun_sanitizer_redacts_cache_keys() {
+    let safe_msg = sanitize_error_message(
+        "token=secret cached_token=secret2 cached_ingress_cookie=secret3 \"token\":\"secret4\"",
+    );
+
+    assert!(!safe_msg.contains("secret"));
+    assert!(safe_msg.contains("<redacted>"));
+}
+
+fn unique_test_dir(name: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "gnome-codex-bar-stepfun-{name}-{}-{nanos}",
+        std::process::id()
+    ))
 }

@@ -19,6 +19,28 @@ fn test_normalize_workspace_id() {
 }
 
 #[test]
+fn test_discovered_workspace_id_cache_helpers() {
+    let key = cache_key_for_cookie("sid=abc");
+    {
+        let mut cached = DISCOVERED_WORKSPACE_IDS.lock().unwrap();
+        cached.insert(key, "wrk_cached".into());
+    }
+
+    let cached = DISCOVERED_WORKSPACE_IDS.lock().unwrap().get(&key).cloned();
+    assert_eq!(cached, Some("wrk_cached".into()));
+
+    DISCOVERED_WORKSPACE_IDS.lock().unwrap().clear();
+}
+
+#[test]
+fn test_workspace_id_cache_key_differs_by_cookie() {
+    assert_ne!(
+        cache_key_for_cookie("sid=abc"),
+        cache_key_for_cookie("sid=def")
+    );
+}
+
+#[test]
 fn test_request_cookie_header() {
     assert_eq!(
         request_cookie_header("sid=abc; other=1"),

@@ -1,3 +1,4 @@
+use super::{read_selected_provider_from_path, write_selected_provider_to_path};
 use crate::providers::{ProviderStatus, StatusSnapshot};
 use std::collections::HashMap;
 
@@ -58,7 +59,7 @@ fn test_provider_status_serialization() {
 
     assert_eq!(parsed["provider_id"], "deepseek");
     assert_eq!(parsed["provider_name"], "DeepSeek");
-    assert_eq!(parsed["available"], true);
+    assert_eq!(parsed["available"], serde_json::Value::Bool(true));
     assert_eq!(parsed["remaining_percent"], 50.0);
     assert_eq!(parsed["details"]["total_balance"], 5.0);
     assert_eq!(parsed["error"], "timeout");
@@ -77,7 +78,7 @@ fn test_write_and_read_selected_provider() {
 
 #[test]
 fn test_read_selected_provider_missing_file() {
-    // Simulate the parsing logic of read_selected_provider_sync with bad input
+    // Simulate the selected_provider parsing logic with bad input
     // An empty/non-existent file would fail fs::read_to_string, so the function
     // returns None. We test the JSON parsing branch with invalid content.
     let bad_content = "not valid json";
@@ -88,4 +89,23 @@ fn test_read_selected_provider_missing_file() {
     let valid_but_missing = serde_json::json!({ "other_key": "value" });
     let extracted = valid_but_missing["selected_provider"].as_str();
     assert!(extracted.is_none());
+}
+
+#[test]
+fn test_write_selected_provider_to_path_read_compatible() {
+    let dir = std::env::temp_dir().join(format!(
+        "codex-bar-selected-provider-test-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let path = dir.join("selected_provider.json");
+
+    write_selected_provider_to_path(&path, "stepfun").expect("write selected provider");
+
+    assert_eq!(
+        read_selected_provider_from_path(&path),
+        Some("stepfun".into())
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }

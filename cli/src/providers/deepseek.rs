@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use serde::Deserialize;
 
-use super::{Provider, ProviderConfig, ProviderStatus};
+use super::{
+    sanitized_http_error_message, Provider, ProviderConfig, ProviderStatus,
+    HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
+};
 
 pub struct DeepSeekProvider;
 
@@ -28,7 +31,10 @@ impl Provider for DeepSeekProvider {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("DeepSeek API key not configured"))?;
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
+            .build()?;
         let resp = client
             .get("https://api.deepseek.com/user/balance")
             .header("Authorization", format!("Bearer {}", api_key))
@@ -44,7 +50,11 @@ impl Provider for DeepSeekProvider {
                 available: false,
                 remaining_percent: 0.0,
                 details: HashMap::new(),
-                error: Some(format!("HTTP {}: {}", status, body)),
+                error: Some(sanitized_http_error_message(
+                    "DeepSeek balance",
+                    status,
+                    &body,
+                )),
             });
         }
 

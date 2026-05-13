@@ -75,12 +75,36 @@ fn test_systemd_unit_uses_absolute_path() {
         if line.contains("ExecStart=") {
             let path = line.split('=').nth(1).unwrap();
             assert!(
-                path.starts_with('/'),
+                path.starts_with('/') || path.starts_with('"'),
                 "ExecStart path should be absolute: {}",
                 path
             );
         }
     }
+}
+
+#[test]
+fn test_systemd_escape_exec_arg_quotes_spaces_and_special_chars() {
+    let escaped = systemd_escape_exec_arg("/Applications/Codex & Bar/bin/codex<bar>");
+    assert_eq!(escaped, "\"/Applications/Codex & Bar/bin/codex<bar>\"");
+}
+
+#[test]
+fn test_systemd_escape_exec_arg_escapes_quotes_backslashes_and_expansion_chars() {
+    let escaped = systemd_escape_exec_arg("/tmp/Codex `Bar`/codex \"bar\" $PATH\\bin %h");
+    assert_eq!(
+        escaped,
+        "\"/tmp/Codex \\`Bar\\`/codex \\\"bar\\\" \\$PATH\\\\bin %%h\""
+    );
+}
+
+#[test]
+fn test_xml_escape_escapes_plist_inserted_values() {
+    let escaped = xml_escape("/tmp/Codex & Bar/<bin>/\"codex\" 'bar'");
+    assert_eq!(
+        escaped,
+        "/tmp/Codex &amp; Bar/&lt;bin&gt;/&quot;codex&quot; &apos;bar&apos;"
+    );
 }
 
 #[test]
