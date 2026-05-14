@@ -392,10 +392,22 @@ export default class CodexBarExtension extends Extension {
         const m = Main.layoutManager.primaryMonitor;
         let pw = this._popup.get_preferred_width(-1)[1]; if (pw<100) pw=310;
         if (pw > 360) pw = 360;  // cap width to prevent overflow from long labels
+        let ph = this._popup.get_preferred_height(pw)[1];
+
+        // X: centre under button, clamp to monitor edges
         let px = bx + (bw-pw)/2;
-        if (px < m.x) px = m.x+8;
-        if (px+pw > m.x+m.width) px = m.x+m.width-pw-8;
-        this._popup.set_position(Math.round(px), Math.round(by+bh+4));
+        if (px < m.x) px = m.x + 8;
+        if (px + pw > m.x + m.width) px = m.x + m.width - pw - 8;
+
+        // Y: prefer below button; flip above if it overflows bottom edge
+        let py = by + bh + 4;
+        if (py + ph > m.y + m.height) {
+            py = by - ph - 4;
+        }
+        if (py < m.y) py = m.y + 8;
+
+        this._popup.set_position(Math.round(px), Math.round(py));
+        this._popup.set_width(pw);
         this._popup.show();
         this._updatePopupBackdropGeometry();
         this._popupBackdrop?.show();
