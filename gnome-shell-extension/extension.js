@@ -391,6 +391,7 @@ export default class CodexBarExtension extends Extension {
         const [bw,bh] = this._btn.get_transformed_size();
         const m = Main.layoutManager.primaryMonitor;
         let pw = this._popup.get_preferred_width(-1)[1]; if (pw<100) pw=310;
+        if (pw > 360) pw = 360;  // cap width to prevent overflow from long labels
         let px = bx + (bw-pw)/2;
         if (px < m.x) px = m.x+8;
         if (px+pw > m.x+m.width) px = m.x+m.width-pw-8;
@@ -505,7 +506,7 @@ export default class CodexBarExtension extends Extension {
             const paid = +d.topped_up_balance || 0;
             const granted = +d.granted_balance || 0;
             sec.add_child(new St.Label({
-                text: `Progress shows balance existence, not quota ratio. ${s}${total.toFixed(2)} (Paid: ${s}${paid.toFixed(2)} / Granted: ${s}${granted.toFixed(2)})`,
+                text: `${s}${total.toFixed(2)} (Paid: ${s}${paid.toFixed(2)} / Granted: ${s}${granted.toFixed(2)})`,
                 style: `font-size:11px; color:${c.muted}; margin-top:4px;`
             }));
         } else {
