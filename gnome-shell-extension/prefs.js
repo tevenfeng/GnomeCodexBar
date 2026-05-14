@@ -2,6 +2,7 @@ import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Ex
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import {ConfigManager} from './configManager.js';
 
@@ -76,7 +77,7 @@ export default class CodexBarPreferences extends ExtensionPreferences {
         const errorRow = new Adw.ActionRow({ visible: false });
         errorRow.add_suffix(refreshErrorLabel);
         refreshGrp.add(errorRow);
-        refreshErrorLabel.bind_property('visible', errorRow, 'visible', Gio.BindingFlags.SYNC_CREATE);
+        refreshErrorLabel.bind_property('visible', errorRow, 'visible', GObject.BindingFlags.SYNC_CREATE);
 
         const cliPathRow = new Adw.EntryRow({ title: _('CLI Path') });
         settings.bind('cli-path', cliPathRow, 'text', Gio.SettingsBindFlags.DEFAULT);
@@ -95,7 +96,7 @@ export default class CodexBarPreferences extends ExtensionPreferences {
         const providerErrorRow = new Adw.ActionRow({ visible: false });
         providerErrorRow.add_suffix(providerErrorLabel);
         provGrp.add(providerErrorRow);
-        providerErrorLabel.bind_property('visible', providerErrorRow, 'visible', Gio.BindingFlags.SYNC_CREATE);
+        providerErrorLabel.bind_property('visible', providerErrorRow, 'visible', GObject.BindingFlags.SYNC_CREATE);
 
         const dsRow = new Adw.SwitchRow({
             title: _('DeepSeek'),
@@ -148,7 +149,7 @@ export default class CodexBarPreferences extends ExtensionPreferences {
         const orderErrorRow = new Adw.ActionRow({ visible: false });
         orderErrorRow.add_suffix(orderErrorLabel);
         orderGrp.add(orderErrorRow);
-        orderErrorLabel.bind_property('visible', orderErrorRow, 'visible', Gio.BindingFlags.SYNC_CREATE);
+        orderErrorLabel.bind_property('visible', orderErrorRow, 'visible', GObject.BindingFlags.SYNC_CREATE);
 
         const providerNames = Object.fromEntries(PROVIDERS.map(([id, name]) => [id, name]));
         const normalizeOrder = order => {
