@@ -391,7 +391,6 @@ export default class CodexBarExtension extends Extension {
         const [bw,bh] = this._btn.get_transformed_size();
         const m = Main.layoutManager.primaryMonitor;
         let pw = this._popup.get_preferred_width(-1)[1]; if (pw<100) pw=310;
-        if (pw > 360) pw = 360;  // cap width to prevent overflow from long labels
         let ph = this._popup.get_preferred_height(pw)[1];
 
         // X: centre under button, clamp to monitor edges
@@ -407,7 +406,6 @@ export default class CodexBarExtension extends Extension {
         if (py < m.y) py = m.y + 8;
 
         this._popup.set_position(Math.round(px), Math.round(py));
-        this._popup.set_width(pw);
         this._popup.show();
         this._updatePopupBackdropGeometry();
         this._popupBackdrop?.show();
