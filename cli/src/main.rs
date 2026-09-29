@@ -1,5 +1,6 @@
 mod atomic_write;
 mod autostart;
+mod browser_cookies;
 mod config;
 mod daemon;
 mod output;
@@ -41,6 +42,10 @@ enum Commands {
         /// Set workspace ID (for OpenCode Go, e.g. wrk_...)
         #[arg(long)]
         workspace_id: Option<String>,
+        /// Read the OpenCode Go console cookie from this browser
+        /// (edge, chrome, chromium, brave, vivaldi, opera, firefox, librewolf, zen)
+        #[arg(long)]
+        cookie_browser: Option<String>,
         /// Enable or disable this provider
         #[arg(long)]
         enabled: Option<bool>,
@@ -84,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
             password,
             cookie_header,
             workspace_id,
+            cookie_browser,
             enabled,
         } => {
             let mut config = Config::load()?;
@@ -97,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
                     password: None,
                     cookie_header: None,
                     workspace_id: None,
+                    cookie_browser: None,
                 });
 
             if let Some(key) = api_key {
@@ -113,6 +120,9 @@ async fn main() -> anyhow::Result<()> {
             }
             if let Some(workspace) = workspace_id {
                 entry.workspace_id = Some(workspace);
+            }
+            if let Some(browser) = cookie_browser {
+                entry.cookie_browser = Some(browser);
             }
             if let Some(en) = enabled {
                 entry.enabled = en;

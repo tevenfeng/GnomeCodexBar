@@ -141,19 +141,47 @@ codex-bar-cli config stepfun --username <EMAIL> --password <PASSWORD>
 
 ### OpenCode Go
 
-```bash
-codex-bar-cli config opencodego --enabled true --cookie-header '<COOKIE_HEADER>' --workspace-id 'wrk_...'
-```
+OpenCode 已把网页端改为客户端渲染的 Console（`/console/`），用量数据通过 JSON 接口
+`/console/api/go/status` 获取，鉴权使用 Console 的会话 Cookie（`__Host-console_session`）。
 
-也可以通过环境变量提供敏感信息，避免把 Cookie 写入配置文件：
+**默认会自动从本机浏览器读取该 Cookie**，无需手工配置：
 
 ```bash
-export CODEXBAR_OPENCODEGO_COOKIE_HEADER='<COOKIE_HEADER>'
-export CODEXBAR_OPENCODEGO_WORKSPACE_ID='wrk_...'
 codex-bar-cli config opencodego --enabled true
 ```
 
-> `cookie_header` 是浏览器会话凭据，请勿提交到版本控制或公开日志中。
+支持的浏览器：Edge、Chrome、Chromium、Brave、Vivaldi、Opera、Firefox、LibreWolf、Zen、Waterfox
+（含 Flatpak / Snap 安装与多 Profile）。密钥读取方式：
+
+| 平台 | Cookie 密钥来源 |
+|------|----------------|
+| Linux | Secret Service / GNOME Keyring 中的 Chromium "Safe Storage" 项 |
+| macOS | 钥匙串中的 `<浏览器> Safe Storage` |
+| Firefox | 明文存储，直接读取 |
+
+也可以指定浏览器，或改为手工提供 Cookie（优先级最高）：
+
+```bash
+# 指定浏览器
+codex-bar-cli config opencodego --cookie-browser edge
+
+# 手工提供 Cookie（会覆盖浏览器自动读取）
+codex-bar-cli config opencodego --cookie-header '__Host-console_session=<VALUE>' --workspace-id 'wrk_...'
+```
+
+环境变量方式（避免把 Cookie 写入配置文件）：
+
+```bash
+export CODEXBAR_OPENCODEGO_COOKIE_HEADER='__Host-console_session=<VALUE>'
+export CODEXBAR_OPENCODEGO_WORKSPACE_ID='wrk_...'
+export CODEXBAR_OPENCODEGO_COOKIE_BROWSER='edge'
+codex-bar-cli config opencodego --enabled true
+```
+
+> - `workspace_id`（`wrk_...`）可省略，此时会用 Cookie 调 `/console/api/orgs` 自动发现。
+> - 若配置的 Cookie 已失效（HTTP 401），会自动回退到浏览器读取。
+> - `cookie_header` 是浏览器会话凭据，请勿提交到版本控制或公开日志中。
+> - 用 `RUST_LOG=debug codex-bar-cli fetch` 可以看到 Cookie 实际来自哪个浏览器与 Profile。
 
 ### 启用/禁用 Provider
 
@@ -177,8 +205,10 @@ password = "your-password"
 
 [providers.opencodego]
 enabled = true
-cookie_header = "session=xxx; other=yyy"
-workspace_id = "wrk_xxx"
+# 留空即自动从浏览器读取 Console 会话 Cookie
+# cookie_browser = "edge"
+# cookie_header = "__Host-console_session=xxx"
+# workspace_id = "wrk_xxx"
 
 [general]
 refresh_interval_secs = 300

@@ -18,3 +18,13 @@ log = "0.4"
 env_logger = "0.11"
 async-trait = "0.1"
 regex = "1"
+# Browser cookie extraction (OpenCode Go session cookie).
+rusqlite = { version = "0.40", features = ["bundled"] }
+aes = "0.8"
+cbc = "0.1"
+pbkdf2 = "0.12"
+sha1 = "0.10"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Chromium keeps its cookie key in the Secret Service ("Safe Storage" item).
+secret-service = { version = "5", features = ["rt-tokio-crypto-rust"] }

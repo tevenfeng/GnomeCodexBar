@@ -26,6 +26,8 @@ pub struct ProviderConfig {
     // OpenCode Go
     pub cookie_header: Option<String>,
     pub workspace_id: Option<String>,
+    /// Browser to read the console session cookie from (e.g. "edge", "brave").
+    pub cookie_browser: Option<String>,
 }
 
 /// Unified status for a single provider.

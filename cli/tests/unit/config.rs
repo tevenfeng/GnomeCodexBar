@@ -151,6 +151,7 @@ fn test_provider_item_skip_serializing() {
         password: None,
         cookie_header: None,
         workspace_id: None,
+        cookie_browser: None,
     };
 
     let toml_str = toml::to_string_pretty(&item).expect("serialize");
@@ -161,6 +162,7 @@ fn test_provider_item_skip_serializing() {
     assert!(!toml_str.contains("password"));
     assert!(!toml_str.contains("cookie_header"));
     assert!(!toml_str.contains("workspace_id"));
+    assert!(!toml_str.contains("cookie_browser"));
 
     // enabled should still be present
     assert!(toml_str.contains("enabled"));

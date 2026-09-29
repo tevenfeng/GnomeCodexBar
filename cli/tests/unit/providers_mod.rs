@@ -20,6 +20,7 @@ fn test_provider_config_serialization() {
         password: Some("secret".into()),
         cookie_header: Some("sid=test".into()),
         workspace_id: Some("wrk_test".into()),
+        cookie_browser: Some("edge".into()),
     };
 
     let json = serde_json::to_string(&config).unwrap();
@@ -31,6 +32,7 @@ fn test_provider_config_serialization() {
     assert_eq!(deserialized.password, config.password);
     assert_eq!(deserialized.cookie_header, config.cookie_header);
     assert_eq!(deserialized.workspace_id, config.workspace_id);
+    assert_eq!(deserialized.cookie_browser, config.cookie_browser);
 }
 
 #[test]

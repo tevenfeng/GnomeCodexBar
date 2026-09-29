@@ -29,6 +29,9 @@ pub struct ProviderItem {
     pub cookie_header: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+    /// Browser the OpenCode Go console cookie is read from ("edge", "chrome", …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cookie_browser: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +90,7 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
+                        cookie_browser: None,
                     },
                 ),
                 (
@@ -98,6 +102,7 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
+                        cookie_browser: None,
                     },
                 ),
                 (
@@ -109,6 +114,7 @@ impl Default for Config {
                         password: None,
                         cookie_header: None,
                         workspace_id: None,
+                        cookie_browser: None,
                     },
                 ),
             ]),
@@ -196,6 +202,7 @@ impl Config {
             password: None,
             cookie_header: None,
             workspace_id: None,
+            cookie_browser: None,
         }
     }
 
@@ -208,6 +215,7 @@ impl Config {
             password: p.and_then(|p| p.password.clone()),
             cookie_header: None,
             workspace_id: None,
+            cookie_browser: None,
         }
     }
 
@@ -220,6 +228,7 @@ impl Config {
             password: None,
             cookie_header: p.and_then(|p| p.cookie_header.clone()),
             workspace_id: p.and_then(|p| p.workspace_id.clone()),
+            cookie_browser: p.and_then(|p| p.cookie_browser.clone()),
         }
     }
 }
